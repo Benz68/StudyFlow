@@ -18,6 +18,13 @@ try {
     await page.goto('http://127.0.0.1:4173');
     await page.locator('#main h1').waitFor();
     assert.equal(await page.locator('html').getAttribute('dir'), 'rtl');
+    assert.equal(await page.locator('.brand-mark:visible').getAttribute('src'), '/src/studyflow/brand/mark.svg');
+    assert.ok(await page.locator('.brand-mark:visible').evaluate(image => image.complete && image.naturalWidth > 0), 'Fresh brand is rendered');
+    const manifest = await (await page.request.get('http://127.0.0.1:4173/manifest.json')).json();
+    for (const icon of manifest.icons) {
+      assert.ok(icon.src.startsWith('/src/studyflow/brand/'), 'Only fresh install icons');
+      assert.ok((await page.request.get(`http://127.0.0.1:4173${icon.src}`)).ok());
+    }
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'No horizontal overflow');
     await page.screenshot({ path: resolve(output, `empty-${viewport.width}.png`), fullPage: true });
     await page.locator('[data-action="demo"]').click();

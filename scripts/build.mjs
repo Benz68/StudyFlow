@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = join(root, 'dist');
-const assets = ['index.html', 'manifest.json', 'sw.js', 'logo_192.png', 'logo_384.png', 'logo_512.png'];
+const assets = ['index.html', 'manifest.json', 'sw.js'];
 const extensions = new Set(['.mjs', '.css', '.svg', '.png', '.webp']);
 
 async function collect(directory, prefix) {

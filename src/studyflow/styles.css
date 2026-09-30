@@ -19,8 +19,7 @@ h1,h2,h3,.brand{font-family:Heebo,Arial,sans-serif}
 .sidebar{width:238px;flex-shrink:0;position:sticky;top:0;height:100vh;background:#fff;border-left:1px solid var(--line);padding:40px 24px;display:flex;flex-direction:column}
 .brand{display:flex;align-items:center;gap:12px;font-size:23px;direction:ltr;justify-content:flex-end;font-weight:800;letter-spacing:-.7px}
 .brand small{display:block;font-size:11px;font-weight:400;letter-spacing:0;direction:rtl;text-align:left;margin-top:4px;color:var(--muted)}
-.brand-mark{background:var(--teal);width:43px;height:43px;border-radius:15px 15px 15px 5px;color:#fff;display:grid;place-content:center;position:relative;font-style:italic;font-size:30px;font-weight:600;padding-right:11px}
-.brand-mark span{position:absolute;right:7px;top:5px;color:#afe0da;font-size:24px}
+.brand-mark{display:block;width:43px;height:43px;flex-shrink:0}
 .sidebar-caption{font-size:11px;color:#8c98a4;margin:55px 16px 12px}
 .desktop-nav{display:grid;gap:8px}
 .desktop-nav button{display:flex;align-items:center;gap:15px;text-align:right;padding:14px 17px;border-radius:12px;color:var(--muted);font-weight:600;font-size:15px}
@@ -264,7 +263,7 @@ to{opacity:1;transform:translateY(0)}
 .topbar{height:78px;border-bottom:0}
 .topbar-label{display:none}
 .mobile-brand{display:flex;font-size:21px;gap:7px;flex-direction:row-reverse}
-.mobile-brand>.icon{color:var(--teal);width:24px;height:24px}
+.mobile-brand>.brand-mark{width:32px;height:32px}
 .topbar-actions{gap:10px}
 .topbar .icon-button{width:38px;height:44px}
 .page-heading{margin:19px 0 24px;display:block}

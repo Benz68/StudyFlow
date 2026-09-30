@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const base = process.argv.includes('--dist') ? resolve(root, 'dist') : root;
-const rootAssets = new Set(['index.html', 'manifest.json', 'sw.js', 'logo_192.png', 'logo_384.png', 'logo_512.png']);
+const rootAssets = new Set(['index.html', 'manifest.json', 'sw.js']);
 const types = { '.html': 'text/html; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp' };
 const appExtensions = new Set(['.mjs', '.css', '.svg', '.png', '.webp']);
 

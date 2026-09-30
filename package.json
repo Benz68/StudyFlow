@@ -1,7 +1,8 @@
 {
-  "name": "studyflow",
-  "version": "2.0.0",
+  "name": "studyflow-weekly",
+  "version": "0.1.0",
   "private": true,
+  "description": "Hebrew mobile-first weekly planner, built from scratch.",
   "scripts": {
     "dev": "node scripts/serve.mjs",
     "build": "node scripts/build.mjs",

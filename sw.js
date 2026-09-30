@@ -1,5 +1,5 @@
-const CACHE = 'studyflow-clean-v1';
-const SHELL = ['/', '/index.html', '/manifest.json', '/logo_192.png', '/logo_384.png', '/logo_512.png', '/src/studyflow/bootstrap.mjs', '/src/studyflow/app.mjs', '/src/studyflow/styles.css', '/src/studyflow/forms.mjs', '/src/studyflow/views.mjs', '/src/studyflow/planner.mjs', '/src/studyflow/store.mjs'];
+const CACHE = 'studyflow-fresh-brand-v2';
+const SHELL = ['/', '/index.html', '/manifest.json', '/src/studyflow/brand/mark.svg', '/src/studyflow/brand/app-icon-180.png', '/src/studyflow/brand/app-icon-192.png', '/src/studyflow/brand/app-icon-512.png', '/src/studyflow/bootstrap.mjs', '/src/studyflow/app.mjs', '/src/studyflow/styles.css', '/src/studyflow/forms.mjs', '/src/studyflow/views.mjs', '/src/studyflow/planner.mjs', '/src/studyflow/store.mjs'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
 });

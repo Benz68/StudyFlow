@@ -114,7 +114,7 @@ document.addEventListener('change',async event=>{
   const tasks=[...state.tasks,...imported.tasks.filter(t=>!ids.has(t.id))],events=[...state.events,...imported.events.filter(e=>!eventIds.has(e.id))];
   if(tasks.length>1000||events.length>2000)throw new Error('capacity');
   mutate(()=>{state.tasks=tasks;state.events=events;},'המשימות וההתחייבויות מהגיבוי נוספו.');close();
- }catch{toast('לא הצלחנו לקרוא את הגיבוי. יש לבחור קובץ JSON תקין של StudyFlow.');}
+ }catch{toast('לא הצלחנו לקרוא את הגיבוי. יש לבחור קובץ גיבוי תקין של StudyFlow.');}
 });
 render();
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!sheet.open)render();});

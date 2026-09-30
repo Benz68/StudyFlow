@@ -55,7 +55,7 @@ try{
  await page.locator('[data-action="settings"]:visible').first().click();
  const before=JSON.stringify(await stored());
  await page.locator('#import-file').setInputFiles({name:'broken.json',mimeType:'application/json',buffer:Buffer.from('{"tasks":[{}],"events":[]}')});
- await page.getByText('לא הצלחנו לקרוא את הגיבוי. יש לבחור קובץ JSON תקין של StudyFlow.').waitFor({state:'attached'});
+ await page.getByText('לא הצלחנו לקרוא את הגיבוי. יש לבחור קובץ גיבוי תקין של StudyFlow.').waitFor({state:'attached'});
  assert.equal(JSON.stringify(await stored()),before,'Invalid import cannot erase data');
  await page.keyboard.press('Escape');
  await page.evaluate(()=>navigator.serviceWorker.ready);
