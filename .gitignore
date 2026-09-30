@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Secrets — never commit API keys
+.env
+.env.*
+*.key
+
+# Local tooling / editor / OS
+.claude/
+.mcp.json
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Build / temp
+dist/
+*.log

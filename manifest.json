@@ -1,0 +1,32 @@
+{
+  "name": "StudyFlow",
+  "short_name": "StudyFlow",
+  "description": "השבוע שלך, עם מקום לנשום. תכנון חכם ופשוט לסטודנטים.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F5F7FA",
+  "theme_color": "#087E83",
+  "dir": "rtl",
+  "lang": "he",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "logo_192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "logo_384.png",
+      "sizes": "384x384",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "logo_512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
