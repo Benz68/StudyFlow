@@ -28,7 +28,7 @@ try{
  await page.locator('#title').fill('הרצאה חוזרת');
  await page.locator('#start').fill('09:00');
  await page.locator('#end').fill('11:00');
- await page.locator('[name="repeat"]').check();
+ await page.locator('#repeatMode').selectOption('weeks');
  await submit();
  assert.equal((await stored()).events[0].repeat,'weekly');
  const firstTime=await page.locator('.timeline-row').filter({has:page.locator('[data-action="complete-session"]')}).first().locator('.time b').textContent();
@@ -44,6 +44,7 @@ try{
  await submit();
  assert.equal((await stored()).tasks[0].minutes,180);
  await page.locator('[data-action="settings"]:visible').first().click();
+ await page.locator('details.advanced summary').click();
  await page.locator('#maxDailyMinutes').selectOption('60');
  await page.locator('#settings-form button[type="submit"]').click();
  await page.locator('.overflow-card').waitFor();

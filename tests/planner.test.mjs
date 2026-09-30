@@ -1,10 +1,69 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPlan, localDate, weekDates, timeMinutes, validDate, normalizePreferences, expandEvents } from '../src/studyflow/planner.mjs';
+import { buildPlan, localDate, weekDates, timeMinutes, validDate, normalizePreferences, expandEvents, eventsOverlap } from '../src/studyflow/planner.mjs';
 import { createState, demoState, loadState, saveState, validateState, STORAGE_KEY } from '../src/studyflow/store.mjs';
 
 const now = new Date(2026, 8, 30, 8, 0);
 const task = (id, extra = {}) => ({ id, title: id, minutes: 100, deadline: localDate(now), priority: 'normal', completedMinutes: 0, category: 'study', ...extra });
+
+test('bounded recurrence includes its last day, chosen weekdays, and skips single deleted dates', () => {
+  const event = { id: 'class', title: 'class', date: '2026-09-30', start: '09:00', end: '10:00',
+    repeat: 'weekly', weekdays: [3, 5], repeatUntil: '2026-10-09', excludedDates: ['2026-10-02'] };
+  const state = validateState({ events: [event] });
+  assert.deepEqual(state.events, [event]);
+  assert.deepEqual(expandEvents(state.events, now).map(e => e.date), ['2026-09-30']);
+  assert.deepEqual(expandEvents(state.events, new Date(2026, 9, 7)).map(e => e.date), ['2026-10-07', '2026-10-09']);
+  assert.equal(expandEvents(state.events, new Date(2026, 9, 10)).length, 0);
+  const year = { ...event, repeatUntil: '2027-09-30', excludedDates: [] };
+  assert.ok(expandEvents([year], new Date(2027, 8, 29)).some(e => e.date === '2027-09-29'));
+  assert.equal(expandEvents([year], new Date(2027, 9, 1)).length, 0);
+  assert.equal(validateState({ events: [{ ...event, repeatUntil: '2026-09-29' }] }).events.length, 0);
+});
+
+test('series conflicts require actual shared dates and overlapping time', () => {
+  const a = { date: '2026-09-30', start: '09:00', end: '10:00', repeat: 'weekly', weekdays: [3], repeatUntil: '2026-10-07' };
+  const b = { date: '2026-10-07', start: '09:30', end: '11:00' };
+  assert.equal(eventsOverlap(a, b), true);
+  assert.equal(eventsOverlap({ ...a, excludedDates: ['2026-10-07'] }, b), false);
+  assert.equal(eventsOverlap(a, { ...b, date: '2026-10-14', repeat: 'weekly' }), false);
+  assert.equal(eventsOverlap(a, { ...b, start: '10:00' }), false);
+  assert.equal(eventsOverlap(a, { ...b, repeat: 'weekly', weekdays: [4] }), false);
+});
+
+test('personal time and days precede earlier availability and task preference can override', () => {
+  const state = { tasks: [task('one', { minutes: 50, deadline: '2026-10-06' })],
+    preferences: { preferredTime: 'evening', preferredDays: [5] } };
+  const result = buildPlan(state, now);
+  assert.equal(result.sessions[0].date, '2026-10-02');
+  assert.equal(result.sessions[0].start, '17:00');
+  assert.equal(result.sessions[0].preferenceFallback, false);
+  state.tasks[0].preferredTime = 'morning';
+  assert.equal(buildPlan(validateState(state), now).sessions[0].start, '09:00');
+  state.tasks[0].preferredTime = 'inherit';
+  assert.equal(buildPlan(validateState(state), now).sessions[0].start, '17:00');
+});
+
+test('soft preference fills missing capacity with explanation; strict preference leaves remainder', () => {
+  const state = { tasks: [task('one', { minutes: 100 })],
+    events: [{ date: localDate(now), start: '17:00', end: '21:00' }],
+    preferences: { preferredTime: 'evening', allowOutsidePreferred: true } };
+  const soft = buildPlan(state, now);
+  assert.equal(soft.plannedMinutes, 100);
+  assert.ok(soft.sessions.every(session => session.preferenceFallback && session.preferenceFallbackReason));
+  const strict = buildPlan({ ...state, preferences: { ...state.preferences, allowOutsidePreferred: false } }, now);
+  assert.equal(strict.plannedMinutes, 0);
+  assert.equal(strict.unscheduled[0].minutes, 100);
+  assert.match(strict.unscheduled[0].reason, /המועדפים/);
+});
+
+test('balanced planning spreads work and accounts for already completed daily load', () => {
+  const state = { tasks: [task('one', { minutes: 150, deadline: '2026-10-02', completionLog: [{ date: localDate(now), minutes: 100 }] })],
+    preferences: { scheduleStyle: 'balanced' } };
+  const plan = buildPlan(state, now);
+  assert.equal(plan.plannedMinutes, 150);
+  assert.deepEqual([...new Set(plan.sessions.map(session => session.date))], ['2026-10-01', '2026-10-02']);
+  assert.equal(buildPlan({ ...state, preferences: { scheduleStyle: 'early' } }, now).sessions[0].date, localDate(now));
+});
 
 test('sessions respect current time, fixed events, deadlines, daily cap, and breaks', () => {
   const current = new Date(2026, 8, 30, 10, 7, 30);

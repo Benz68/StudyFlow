@@ -23,6 +23,7 @@ export function validateState(value) {
         ? Math.min(minutes, Math.max(0, Math.round(task.completedMinutes))) : 0 };
     if (typeof task.notBefore === 'string' && !Number.isNaN(Date.parse(task.notBefore))) result.notBefore = new Date(task.notBefore).toISOString();
     if (Array.isArray(task.completionLog)) result.completionLog = normalizeCompletionLog(task.completionLog);
+    if (['inherit', 'any', 'morning', 'afternoon', 'evening'].includes(task.preferredTime)) result.preferredTime = task.preferredTime;
     return [result];
   });
   ids.clear();
@@ -33,7 +34,16 @@ export function validateState(value) {
     if (start === null || end === null || start >= end) return [];
     ids.add(text(event.id));
     const result = { id: text(event.id), title: text(event.title), date: event.date, start: event.start, end: event.end };
-    if (event.repeat === 'weekly') result.repeat = 'weekly';
+    if (event.repeat === 'weekly') {
+      if (event.repeatUntil !== undefined && (!validDate(event.repeatUntil) || event.repeatUntil < event.date)) return [];
+      result.repeat = 'weekly';
+      if (event.repeatUntil) result.repeatUntil = event.repeatUntil;
+      if (Array.isArray(event.weekdays)) {
+        const days = [...new Set(event.weekdays.filter(day => Number.isInteger(day) && day >= 0 && day <= 6))];
+        if (days.length) result.weekdays = days;
+      }
+    }
+    if (Array.isArray(event.excludedDates)) result.excludedDates = [...new Set(event.excludedDates.filter(validDate))].slice(0, 2000);
     return [result];
   });
   state.preferences = normalizePreferences(value.preferences);
