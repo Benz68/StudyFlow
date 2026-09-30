@@ -2,6 +2,7 @@ import {buildPlan,localDate,weekDates,expandEvents,validDate,timeMinutes,eventsO
 import {loadState,saveState,demoState,validateState} from './store.mjs';
 import {shell,renderMain,icon} from './views.mjs';
 import {addForm,settingsForm,proContent} from './forms.mjs';
+import {celebrateCompletion} from './motion.mjs';
 
 let state=loadState(), plan, view='today', selected=localDate(), undoState=null;
 let realState=null, editing=null, returnFocus=null, toastTimer, storageFailed=false;
@@ -61,16 +62,26 @@ function updateRepeat(){
   form.elements.repeatUntil.min=date;
   if(!form.elements.repeatUntil.value)form.elements.repeatUntil.value=recurrenceEnd(date,'year');
   const until=mode==='custom'?form.elements.repeatUntil.value:recurrenceEnd(date,mode,form.elements.weeksCount.value);
-  const labels=['א׳','ב׳','ג׳','ד׳','ה׳','ו׳','שבת'];
-  const selectedDays=[...form.querySelectorAll('[name=weekdays]:checked')].map(el=>labels[Number(el.value)]);
+  const labels=['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
+  const weekdays=[...form.querySelectorAll('[name=weekdays]:checked')].map(el=>Number(el.value));
+  const selectedDays=weekdays.map(day=>labels[day]);
   const format=value=>validDate(value)?new Date(`${value}T12:00:00`).toLocaleDateString('he-IL'):value;
-  form.querySelector('#repeat-summary').textContent=mode==='once'?`פעם אחת ב־${format(date)}. נשאיר את השעות האלה פנויות ממשימות.`:`בכל שבוע בימים ${selectedDays.join(', ')||'שתבחר'}, מ־${format(date)} עד ${format(until)} (כולל).`;
+  const summary=form.querySelector('#repeat-summary');
+  if(mode==='once')summary.textContent=`פעם אחת בלבד, ב־${format(date)}. הפעילות לא תחזור בשבוע הבא.`;
+  else if(!weekdays.length)summary.textContent='בחר לפחות יום אחד בשבוע כדי לראות מתי הפעילות מסתיימת.';
+  else if(!validDate(until)||until<date)summary.textContent='בחר תאריך סיום ביום ההתחלה או אחריו.';
+  else {
+   const cursor=new Date(`${until}T12:00:00`),excluded=state.events.find(e=>e.id===editing)?.excludedDates||[];
+   while(localDate(cursor)>=date&&(!weekdays.includes(cursor.getDay())||excluded.includes(localDate(cursor))))cursor.setDate(cursor.getDate()-1);
+   const last=localDate(cursor);
+   summary.textContent=last<date?'אין מועד פעיל בטווח שבחרת. אפשר לשנות ימים או תאריך סיום.':`בכל שבוע בימים ${selectedDays.join(', ')}, מ־${format(date)} עד ${format(until)}${mode==='year'?' — שנה מתאריך ההתחלה':''}. המועד האחרון: ${format(last)}. אחריו הפעילות תיפסק אוטומטית. אפשר להפסיק מוקדם דרך עריכת הפעילות.`;
+  }
  }
 }
 function editEvent(id){
  const item=state.events.find(e=>e.id===id);if(!item)return;
  open(addForm(localDate(),weekDates()[6],'event'));editing=id;
- sheet.querySelector('#dialog-title').textContent=item.repeat==='weekly'?'נעדכן את כל הסדרה':'נעדכן את ההתחייבות';
+ sheet.querySelector('#dialog-title').textContent=item.repeat==='weekly'?'נעדכן את הפעילות החוזרת':'נעדכן את הפעילות';
  sheet.querySelector('.form-tabs').hidden=true;
  const form=sheet.querySelector('form');for(const key of ['title','date','start','end'])form.elements[key].value=item[key];
  form.elements.date.min=item.date<localDate()?item.date:localDate();
@@ -78,7 +89,16 @@ function editEvent(id){
  form.elements.repeatUntil.value=item.repeatUntil||recurrenceEnd(item.date,'year');
  const weekdays=item.weekdays?.length?item.weekdays:[new Date(`${item.date}T12:00:00`).getDay()];
  form.querySelectorAll('[name=weekdays]').forEach(el=>{el.checked=weekdays.includes(Number(el.value));});
- form.querySelector('.submit-button').textContent='לשמור ולעדכן את התוכנית';updateRepeat();
+ form.querySelector('.submit-button').textContent='לשמור ולעדכן את התוכנית';
+ if(item.repeat==='weekly'&&(!item.repeatUntil||item.repeatUntil>=localDate())){
+  const stop=document.createElement('button');stop.type='button';stop.className='text-button stop-series-button';stop.dataset.action='stop-series';stop.dataset.id=id;stop.textContent='להפסיק את הפעילות מהיום';form.append(stop);
+ }
+ updateRepeat();
+}
+function stopSeries(id){
+ const item=state.events.find(e=>e.id===id&&e.repeat==='weekly');if(!item)return;
+ open(`<div class="sheet-top"><h2 id="dialog-title">להפסיק מהיום?</h2><button class="icon-button" data-action="close" aria-label="סגירה">${icon('close')}</button></div><p>הפעילות לא תופיע מהיום והלאה. המועדים שכבר עברו יישמרו, והזמן שהתפנה יהיה זמין למשימות.</p><button class="primary submit-button" data-action="confirm-stop-series">כן, להפסיק מהיום</button><button class="text-button" data-action="cancel-stop-series">לחזור לעריכה</button>`);
+ sheet.dataset.stopId=id;
 }
 function removeEvent(id,date){
  const item=state.events.find(e=>e.id===id);if(!item)return;
@@ -101,11 +121,18 @@ document.addEventListener('click',event=>{
   case 'pro':open(proContent());break;
   case 'edit-task':editTask(id);break;
   case 'edit-event':editEvent(id);break;
+  case 'stop-series':stopSeries(id);break;
+  case 'cancel-stop-series':editEvent(sheet.dataset.stopId);break;
+  case 'confirm-stop-series':{
+   const stopId=sheet.dataset.stopId,today=localDate(),yesterday=new Date(`${today}T12:00:00`);yesterday.setDate(yesterday.getDate()-1);
+   mutate(()=>{state.events=state.events.flatMap(item=>item.id!==stopId?[item]:item.date>=today?[]:[{...item,repeatUntil:item.repeatUntil&&item.repeatUntil<today?item.repeatUntil:localDate(yesterday)}]);},'הפעילות הופסקה מהיום. התוכנית עודכנה.');close();break;
+  }
   case 'demo':if(!state.tasks.length&&!state.events.length){realState=clone(state);state={...demoState(),demo:true};undoState=null;render();}break;
   case 'exit-demo':if(realState){state=realState;realState=null;undoState=null;selected=localDate();render();toast('המרחב שלך מוכן. מתחילים במשימה אחת.');}break;
   case 'replan':render();toast(plan.unscheduled.length?'עדכנו את התוכנית. כמה משימות עדיין צריכות מקום.':'התוכנית מעודכנת לפי הזמן הפנוי שלך.');break;
   case 'complete-session':{
    const session=plan.sessions.find(s=>s.id===id);if(!session)return;
+   celebrateCompletion(target);
    mutate(()=>{const t=state.tasks.find(t=>t.id===session.taskId);t.completedMinutes=Math.min(t.minutes,(t.completedMinutes||0)+session.minutes);t.completionLog=[...(t.completionLog||[]),{date:localDate(),minutes:session.minutes}];t.done=t.completedMinutes>=t.minutes;},'עוד צעד מאחוריך. כל הכבוד!');break;
   }
   case 'delay':{const session=plan.sessions.find(s=>s.id===id);if(!session)break;mutate(()=>{const t=state.tasks.find(t=>t.id===session.taskId);const later=new Date(Math.max(Date.now(),new Date(`${session.date}T${session.start}`).getTime())+60*60*1000);t.notBefore=later.toISOString();},()=>plan.unscheduled.some(t=>t.taskId===session.taskId)?'דחינו בשעה. חלק מהמשימה לא נכנס לפני היעד — אפשר לעדכן אותו.':'דחינו את המשימה בשעה והתוכנית עודכנה.');break;}

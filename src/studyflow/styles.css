@@ -1,3 +1,4 @@
+@import url('./depth.css');
 :root{font-family:Arial,sans-serif;color:#172c44;background:#f5f7fa;font-synthesis:none;--ink:#172c44;--muted:#6d7c8c;--teal:#087e83;--line:#e5eaef;--white:#fff;--peach:#f3c99c}
 
 *{box-sizing:border-box}

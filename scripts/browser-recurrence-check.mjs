@@ -15,6 +15,7 @@ try{
  await page.locator('[data-form-tab=event]').click();
  await page.locator('#title').fill('שיעור קבוע');
  await page.locator('#repeatMode').selectOption('year');
+ assert.match(await page.locator('#repeat-summary').textContent(),/תיפסק אוטומטית/);
  await page.locator('[name=weekdays][value="4"]').check();
  await submit();
  let event=(await stored()).events[0];
@@ -55,6 +56,30 @@ try{
  await page.locator('[data-action=undo]').click();
  assert.equal((await stored()).events.length,1);
  await page.reload();assert.equal((await stored()).preferences.preferredTime,'evening');
+ await page.locator('[data-view=tasks]:visible').click();
+ await page.locator('.commitments [data-action=edit-event]').click();
+ await page.locator('[data-action=stop-series]').click();
+ await page.locator('[data-action=confirm-stop-series]').click();
+ assert.equal((await stored()).events.length,0,'Stopping a series starting today removes future occurrences');
+ await page.locator('[data-action=undo]').click();
+ await page.evaluate(()=>{const data=JSON.parse(localStorage.getItem('studyflow.fresh.v1'));data.events[0].date='2026-09-01';localStorage.setItem('studyflow.fresh.v1',JSON.stringify(data));});
+ await page.reload();
+ await page.locator('[data-view=tasks]:visible').click();
+ await page.locator('.commitments [data-action=edit-event]').click();
+ await page.locator('[data-action=stop-series]').click();
+ await page.locator('[data-action=confirm-stop-series]').click();
+ assert.equal((await stored()).events[0].repeatUntil,'2026-09-29','Stopping preserves earlier series history');
+ assert.deepEqual((await stored()).events[0].excludedDates,['2026-09-30']);
+ await page.reload();
+ assert.equal(await page.locator('.fixed-card').count(),0);
+ assert.equal(await page.locator('.sculpture-body').evaluate(el=>getComputedStyle(el).animationName),'none');
+ await page.emulateMedia({reducedMotion:'no-preference'});
+ assert.equal(await page.locator('.sculpture-body').evaluate(el=>getComputedStyle(el).animationName),'sculpture-drift');
+ await page.locator('[data-date="2026-10-01"]').click();
+ await page.locator('[data-action=complete-session]').first().click();
+ assert.equal(await page.locator('.completion-burst').count(),9);
+ await page.clock.runFor(800);
+ assert.equal(await page.locator('.completion-burst').count(),0,'Completion particles clean themselves up');
  assert.deepEqual(errors,[]);
  console.log('Year/weeks, selected weekdays, single occurrence, series editing/removal/undo, strict evening preference and reload passed.');
 }finally{await browser.close();}

@@ -8,13 +8,14 @@ const heading = (title,subtitle) => `<div class="sheet-top"><div><span class="ey
 export function addForm(today,deadline,tab='task') {
  const weekday=new Date(`${today}T12:00:00`).getDay();
  return `${heading('מה נוסיף?','מפנים מקום בראש')}
- <div class="form-tabs"><button data-form-tab="task" class="${tab==='task'?'active':''}">משימה גמישה</button><button data-form-tab="event" class="${tab==='event'?'active':''}">התחייבות קבועה</button></div>
+ <div class="form-tabs"><button data-form-tab="task" class="${tab==='task'?'active':''}">משימה שצריך לעשות</button><button data-form-tab="event" class="${tab==='event'?'active':''}">פעילות בשעה קבועה</button></div>
+ <p class="form-kind-help">${tab==='task'?'תרגול, עבודה להגשה או סידור — נבחר יחד כמה זמן צריך, והמערכת תמצא מקום בשבוע.':'שיעור, משמרת או אימון — בוחרים מתי הם מתקיימים, והמערכת לא תשבץ שם משימות.'}</p>
  <form id="add-form" data-kind="${tab}">
  <label for="title">${tab==='task'?'מה תרצה לקדם?':'מה קורה?'}</label>
  <input id="title" name="title" required maxlength="120" autocomplete="off" placeholder="${tab==='task'?'למשל, לתרגל למבחן בסטטיסטיקה':'לימודים, עבודה, אימון בשעה קבועה'}" autofocus>
  ${tab==='task'?taskFields(today,deadline):eventFields(today,weekday)}
  <p id="form-error" class="form-error" role="alert"></p>
- <button class="primary submit-button" type="submit">${tab==='task'?'להוסיף ולמצוא זמן':'לשמור את הזמן הזה'} ${icon('arrow')}</button>
+ <button class="primary submit-button" type="submit">${tab==='task'?'להוסיף ולמצוא זמן':'להוסיף לתוכנית'} ${icon('arrow')}</button>
  <p class="form-footnote">אפשר לשנות את הקצב בכל רגע.</p></form>`;
 }
 
@@ -31,11 +32,11 @@ function taskFields(today,deadline) {
 function eventFields(today,weekday) {
  return `<label for="date">תאריך התחלה</label><input id="date" name="date" type="date" value="${today}" min="${today}" required>
  <div class="form-row"><div><label for="start">משעה</label><input id="start" name="start" type="time" value="10:00" required></div><div><label for="end">עד שעה</label><input id="end" name="end" type="time" value="11:00" required></div></div>
- <label for="repeatMode">לכמה זמן?</label><select id="repeatMode" name="repeatMode"><option value="once">פעם אחת</option><option value="weeks">למספר שבועות</option><option value="year">שנה מתאריך ההתחלה</option><option value="custom">עד תאריך שאבחר</option></select>
+ <label for="repeatMode">זה חד־פעמי או חוזר בכל שבוע?</label><select id="repeatMode" name="repeatMode"><option value="once">פעם אחת בלבד</option><option value="weeks">בכל שבוע, למספר שבועות</option><option value="year">בכל שבוע, למשך שנה</option><option value="custom">בכל שבוע, עד תאריך שאבחר</option></select>
  <div id="repeat-fields" hidden><fieldset class="off-days"><legend>חוזר בכל שבוע בימים</legend>${dayOptions('weekdays',[weekday])}</fieldset>
  <div id="weeks-field" hidden><label for="weeksCount">כמה שבועות?</label><input id="weeksCount" name="weeksCount" type="number" value="4" min="1" max="52" step="1"></div>
  <div id="until-field" hidden><label for="repeatUntil">עד תאריך (כולל)</label><input id="repeatUntil" name="repeatUntil" type="date" min="${today}"></div></div>
- <p id="repeat-summary" class="field-help" aria-live="polite">נשמור את הזמן הזה ונמצא למשימות זמן מסביבו.</p>`;
+ <p id="repeat-summary" class="repeat-summary" aria-live="polite">הפעילות תופיע רק במועד שבחרת.</p>`;
 }
 
 export function settingsForm(p) {
