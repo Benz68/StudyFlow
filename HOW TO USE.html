@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StudyFlow – How to use</title>
+<style>
+:root{--ink:#1d2a3a;--muted:#5f6f82;--teal:#0b7f84;--soft:#e8f4f3;--line:#e3e8ed;--bg:#f6f7f9;--warm:#fff5e8;--warm-ink:#7a5a33}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.7 "Segoe UI",Arial,sans-serif}
+main{max-width:760px;margin:0 auto;padding:40px 16px 80px}
+h1{font-size:34px;line-height:1.2;margin:0 0 6px}
+.lead{color:var(--muted);font-size:19px;margin:0 0 28px}
+nav{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:32px}
+nav a{background:#fff;border:1px solid var(--line);border-radius:20px;padding:6px 14px;color:var(--teal);text-decoration:none;font-size:15px}
+nav a:hover{background:var(--soft)}
+section{background:#fff;border:1px solid var(--line);border-radius:16px;padding:24px 26px;margin-bottom:18px}
+h2{font-size:23px;margin:0 0 12px;display:flex;align-items:center;gap:12px}
+h2 .num{flex-shrink:0;width:34px;height:34px;border-radius:50%;background:var(--teal);color:#fff;display:grid;place-items:center;font-size:17px}
+h3{font-size:18px;margin:22px 0 8px}
+p{margin:0 0 12px}
+ol,ul{margin:0 0 12px;padding-left:24px}
+li{margin-bottom:8px}
+/* Shows the exact Hebrew text you will see on screen */
+.he{direction:rtl;unicode-bidi:isolate;display:inline-block;background:var(--soft);color:var(--teal);font-weight:600;border-radius:8px;padding:0 9px;font-size:16px;white-space:nowrap}
+.btn{background:var(--teal);color:#fff}
+code{background:#eef1f4;border-radius:6px;padding:2px 7px;font-size:15px}
+.tip{background:var(--warm);color:var(--warm-ink);border-radius:12px;padding:14px 18px;margin:14px 0 0}
+.field{border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin-bottom:10px}
+.field b{display:block;margin-bottom:2px}
+.field .ex{color:var(--muted);font-size:15px}
+table{width:100%;border-collapse:collapse;font-size:16px}
+td{padding:10px 8px;border-top:1px solid var(--line);vertical-align:top}
+td:first-child{width:42%}
+.faq b{display:block;margin-top:14px}
+@media(max-width:600px){h1{font-size:28px}section{padding:20px 18px}td:first-child{width:auto}}
+</style>
+</head>
+<body>
+<main>
+<h1>StudyFlow – How to use</h1>
+<p class="lead">A simple guide for people who aren't programmers.</p>
+
+<nav>
+ <a href="#what">What is this?</a>
+ <a href="#open">How to open it</a>
+ <a href="#add">Adding a task</a>
+ <a href="#fixed">Classes &amp; work hours</a>
+ <a href="#ai">The AI helper</a>
+ <a href="#daily">Every day</a>
+ <a href="#close">Closing it</a>
+ <a href="#help">Problems?</a>
+</nav>
+
+<section id="what">
+ <h2><span class="num">1</span>What did I download?</h2>
+ <p><b>StudyFlow is a weekly planner.</b> You tell it what you need to do (for example, "study for the statistics exam, 2 hours, by Thursday"), and it <b>finds free time in your week</b> and puts it on your schedule for you.</p>
+ <p>The app is in <b>Hebrew</b>. In this guide, Hebrew words in <span class="he">green boxes</span> are the exact words you'll see on screen, so you can match them.</p>
+ <p>It's saved in this folder on your computer: <code>C:\Users\noanz\Study\StudyFlow-Handmade</code></p>
+ <p>The folder has a lot of files. <b>You only need two of them:</b></p>
+ <ul>
+  <li><b>Open StudyFlow Handmade</b>: double-click it to start the app.</li>
+  <li><b>HOW TO USE</b>: this guide.</li>
+ </ul>
+ <p>You can ignore all the other files. They're the app's "engine".</p>
+ <div class="tip">🔒 <b>Your information stays private.</b> Everything you type is saved only in your browser on this computer. Nothing is sent to the internet (except what you say to the AI helper, if you use it), and nothing changes on GitHub (the website you downloaded it from).</div>
+</section>
+
+<section id="open">
+ <h2><span class="num">2</span>How to open StudyFlow</h2>
+ <ol>
+  <li>Open the folder <code>C:\Users\noanz\Study\StudyFlow-Handmade</code> (open <b>File Explorer</b> → <b>This PC</b> → <b>C:</b> → <b>Users</b> → <b>noanz</b> → <b>Study</b> → <b>StudyFlow-Handmade</b>).</li>
+  <li><b>Double-click</b> the file <b>Open StudyFlow Handmade</b>.</li>
+  <li>A <b>black window</b> appears. <b>Leave it open.</b> It's what makes the app run.</li>
+  <li>After about 2 seconds, your browser opens StudyFlow automatically.</li>
+ </ol>
+ <div class="tip">⚠️ <b>Don't double-click <code>index.html</code>.</b> It only shows a white page. Always use <b>Open StudyFlow Handmade</b>.<br><br>
+ If Windows shows a blue box saying <i>"Windows protected your PC"</i>, click <b>More info</b> → <b>Run anyway</b>. This happens with any file you create yourself.</div>
+ <h3>Quicker next time</h3>
+ <p>Right-click <b>Open StudyFlow Handmade</b> → <b>Show more options</b> → <b>Send to</b> → <b>Desktop (create shortcut)</b>. You'll then have an icon on your desktop.</p>
+ <p>While the black window is open, you can also type this address in Chrome: <code>http://127.0.0.1:4174</code></p>
+</section>
+
+<section id="screen">
+ <h2><span class="num">3</span>What's on the screen</h2>
+ <table>
+  <tr><td><span class="he btn">+ הוספת משימה</span> or the round <b>+</b> button</td><td><b>Add</b> something new (a task or a class)</td></tr>
+  <tr><td><span class="he">היום</span></td><td><b>Today</b>: your plan for today, hour by hour</td></tr>
+  <tr><td><span class="he">השבוע</span></td><td><b>This week</b>: all 7 days at a glance</td></tr>
+  <tr><td><span class="he">משימות</span></td><td><b>Tasks</b>: a list of everything you added</td></tr>
+  <tr><td><span class="he">העדפות</span></td><td><b>Settings</b>: which hours you're available, breaks, days off</td></tr>
+ </table>
+ <p style="margin-top:12px"><b>Easiest way to learn:</b> click <span class="he">איך משתמשים?</span> (<b>how to use</b>) at the bottom of the side menu (on a phone, it's the <b>?</b> at the top). A short tour circles each button and explains it. Click <b>English</b> on the note to read it in English.</p>
+ <p>Want to see how it looks with tasks first? On the empty start screen, click <span class="he">לראות דוגמה</span> (<b>see an example</b>). To go back to your own empty planner, click <span class="he">חזרה לתוכנית שלי</span> at the top.</p>
+</section>
+
+<section id="add">
+ <h2><span class="num">4</span>Adding a task (something you need to do)</h2>
+ <p>Click <span class="he btn">+ הוספת משימה</span>. A window opens. Make sure the tab <span class="he">משימה שצריך לעשות</span> (<b>a task to do</b>) is selected. Then fill in:</p>
+ <div class="field"><b><span class="he">מה תרצה לקדם?</span>, "What do you want to work on?"</b>Type the name of the task.<div class="ex">Example: <i>Study for statistics exam</i>, <i>Write history essay</i>, <i>Do laundry</i>. You can type in English or Hebrew.</div></div>
+ <div class="field"><b><span class="he">כמה זמן בערך?</span>, "About how long will it take?"</b>Click one of the buttons: <span class="he">חצי שעה</span> = 30 minutes, <span class="he">שעה</span> = 1 hour, <span class="he">שעתיים</span> = 2 hours. You can also type any number of <b>minutes</b> in the small box.<div class="ex">Big tasks are split into smaller study blocks automatically.</div></div>
+ <div class="field"><b><span class="he">עד מתי?</span>, "By when?"</b>Choose the <b>deadline</b> date. The task will be scheduled before then.</div>
+ <div class="field"><b><span class="he">העדפה אישית ועוד אפשרויות</span>, "More options" (optional, you can skip it)</b>
+  <span class="he">מתי נוח לך?</span> = when you prefer to do it (morning / afternoon / evening),
+  <span class="he">סוג המשימה</span> = type (study / personal / work),
+  <span class="he">חשיבות</span> = importance.</div>
+ <p>Click <span class="he btn">להוסיף ולמצוא זמן</span> (<b>add and find time</b>). Done! The task now appears in your plan.</p>
+</section>
+
+<section id="fixed">
+ <h2><span class="num">5</span>Adding classes, work shifts or training (fixed times)</h2>
+ <p>Use this for things that happen at a <b>set time</b>. StudyFlow won't put tasks during those hours.</p>
+ <p>Click <span class="he btn">+ הוספת משימה</span>, then click the tab <span class="he">פעילות בשעה קבועה</span> (<b>activity at a fixed time</b>).</p>
+ <div class="field"><b><span class="he">מה קורה?</span>, "What is it?"</b><div class="ex">Example: <i>Math lecture</i>, <i>Work at the café</i>, <i>Gym</i></div></div>
+ <div class="field"><b><span class="he">תאריך התחלה</span>, "Start date"</b>The day it happens (or the first time it happens).</div>
+ <div class="field"><b><span class="he">משעה</span> / <span class="he">עד שעה</span>, "From" / "Until"</b>Start time and end time.</div>
+ <div class="field"><b><span class="he">זה חד־פעמי או חוזר בכל שבוע?</span>, "One time, or every week?"</b>
+  <span class="he">פעם אחת בלבד</span> = only once.<br>
+  <span class="he">בכל שבוע, למספר שבועות</span> = every week, for a number of weeks.<br>
+  <span class="he">בכל שבוע, למשך שנה</span> = every week, for a year.<br>
+  <span class="he">בכל שבוע, עד תאריך שאבחר</span> = every week, until a date you choose.<br>
+  <div class="ex">If it repeats, pick the days of the week (א׳ = Sunday, ב׳ = Monday … ש׳ = Saturday).</div></div>
+ <p>Click <span class="he btn">להוסיף לתוכנית</span> (<b>add to plan</b>).</p>
+</section>
+
+<section id="ai">
+ <h2><span class="num">🎙</span>The AI helper: just say it</h2>
+ <p>Instead of filling in the form, click <span class="he">העוזר החכם</span> (<b>the smart helper</b>) in the side menu (on a phone, the 🎙 at the top). Press the big microphone and talk, for example:</p>
+ <p><span class="he">מחר בחמש ללמוד למבחן בסטטיסטיקה שעתיים, וביום שלישי יש לי שיעור מעשר עד שתים עשרה כל שבוע</span></p>
+ <ol>
+  <li>Press the microphone again when you're done. Your words appear as text, and you can fix them or type instead.</li>
+  <li>Click <span class="he btn">להבין מה אמרתי</span> (<b>understand what I said</b>).</li>
+  <li>The helper shows a card for everything it understood. <b>Nothing is added yet.</b> Fix a name, or untick anything you don't want.</li>
+  <li>Click <span class="he btn">להוסיף לתוכנית</span> (<b>add to plan</b>).</li>
+ </ol>
+ <p>The first time, Chrome asks to use your microphone. Click <b>Allow</b>.</p>
+ <h3>Connecting it (one time only)</h3>
+ <p>The helper uses <b>Claude</b>, an AI made by Anthropic. It needs an <b>API key</b>, a kind of password that lets StudyFlow use Claude. Each request costs about 1 cent, paid to Anthropic from credit you add.</p>
+ <ol>
+  <li>Go to <code>console.anthropic.com</code> and create an account.</li>
+  <li>Open <b>Billing</b> and add a small amount of credit (the minimum is fine).</li>
+  <li>Open <b>API Keys</b> → <b>Create Key</b>, give it a name like "StudyFlow", and <b>copy</b> it. It starts with <code>sk-ant-</code>.</li>
+  <li>Open <b>Notepad</b>, paste the key, and choose <b>File → Save As</b>. Go to the folder <code>C:\Users\noanz\Study\StudyFlow-Handmade</code>, set <b>Save as type</b> to <b>All files</b>, name it <code>ai-key.txt</code>, and click Save.</li>
+  <li>Close the black window and double-click <b>Open StudyFlow Handmade</b> again.</li>
+ </ol>
+ <div class="tip">🔑 <b>Keep the key secret.</b> Anyone with it can spend your credit. Don't send it to anyone or post it online. If it ever leaks, delete it in the Anthropic console and make a new one.<br><br>
+ 🔒 <b>Privacy:</b> when you use the helper, your recording is turned into text by Google (through Chrome), and that text is sent to Anthropic to be understood. The rest of StudyFlow still stays only on your computer.</div>
+</section>
+
+<section id="daily">
+ <h2><span class="num">6</span>Using it every day</h2>
+ <p>Open <span class="he">היום</span> (<b>Today</b>) to see what to do and when. On each card:</p>
+ <table>
+  <tr><td><span class="he">✓ סיימתי</span></td><td><b>"I finished"</b>: click when you've done that block</td></tr>
+  <tr><td><span class="he">לדחות בשעה</span></td><td><b>Postpone by one hour</b></td></tr>
+  <tr><td><span class="he">עריכה</span></td><td><b>Edit</b></td></tr>
+  <tr><td>🗑 (trash can)</td><td><b>Delete</b></td></tr>
+  <tr><td>Round circle next to a task (in <span class="he">משימות</span>)</td><td>Click it to mark the whole task as <b>done</b></td></tr>
+ </table>
+ <p style="margin-top:12px">Click any day number at the top to see that day's plan.</p>
+ <p>Made a mistake? After every change a black message pops up at the bottom. Click <span class="he">ביטול</span> (<b>undo</b>) in it.</p>
+ <p>If you see an orange box saying tasks <b>didn't fit</b> (<span class="he">לא נכנסו לזמן הפנוי</span>), your week is too full. Open it and either change the deadline or allow more hours in <span class="he">העדפות</span>.</p>
+</section>
+
+<section id="close">
+ <h2><span class="num">7</span>Closing StudyFlow</h2>
+ <p>Close the browser tab, then close the <b>black window</b>. That's it. Your tasks are saved and will still be there next time you open it.</p>
+ <div class="tip">Your tasks are saved <b>in this browser only</b>. If you open StudyFlow in a different browser (for example Edge instead of Chrome), it will look empty. Always use the same browser.<br><br>To keep a backup: <span class="he">העדפות</span> → <span class="he">גיבוי והעברה למכשיר אחר</span> → <span class="he">הורדת גיבוי</span> (download backup).</div>
+</section>
+
+<section id="help" class="faq">
+ <h2><span class="num">?</span>Problems</h2>
+ <b>I see a white, empty page.</b>
+ <p>You probably opened <code>index.html</code> directly. Close it and double-click <b>Open StudyFlow Handmade</b> instead.</p>
+ <b>The browser says "This site can't be reached".</b>
+ <p>The black window is closed. Double-click <b>Open StudyFlow Handmade</b> again.</p>
+ <b>The black window says "address already in use".</b>
+ <p>StudyFlow is already running. Just use the browser tab, or go to <code>http://127.0.0.1:4174</code>.</p>
+ <b>The helper says it isn't connected, or the key is wrong.</b>
+ <p>Check that the file is called exactly <code>ai-key.txt</code> (not <code>ai-key.txt.txt</code>), that it's in the StudyFlow-Handmade folder, and that it contains only the key. Then restart the black window.</p>
+ <b>The microphone doesn't work.</b>
+ <p>Use Chrome, and allow the microphone: click the lock icon next to the address, then turn on <b>Microphone</b>. You can always type instead.</p>
+ <b>The black window says Node.js is needed.</b>
+ <p>Go to <code>nodejs.org</code>, download the <b>LTS</b> version, install it with the default options, then try again.</p>
+</section>
+</main>
+</body>
+</html>

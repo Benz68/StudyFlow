@@ -1,0 +1,27 @@
+{
+  "id": "/",
+  "name": "StudyFlow",
+  "short_name": "StudyFlow",
+  "description": "תכנון שבועי פשוט לסטודנטים. משימות, לימודים וזמן לעצמך.",
+  "lang": "he",
+  "dir": "rtl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F5F7FA",
+  "theme_color": "#087E83",
+  "icons": [
+    {
+      "src": "/src/studyflow/brand/app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/src/studyflow/brand/app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
