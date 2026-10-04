@@ -1,5 +1,7 @@
-const CACHE = 'studyflow-handmade-v4';
-const SHELL = ['/', '/index.html', '/manifest.json', '/src/studyflow/brand/mark.svg', '/src/studyflow/brand/app-icon-180.png', '/src/studyflow/brand/app-icon-192.png', '/src/studyflow/brand/app-icon-512.png', '/src/studyflow/bootstrap.mjs', '/src/studyflow/app.mjs', '/src/studyflow/styles.css', '/src/studyflow/depth.css', '/src/studyflow/motion.mjs', '/src/studyflow/forms.mjs', '/src/studyflow/views.mjs', '/src/studyflow/planner.mjs', '/src/studyflow/store.mjs', '/src/studyflow/tour.mjs', '/src/studyflow/datepicker.mjs', '/src/studyflow/helper.mjs'];
+const CACHE = 'studyflow-handmade-v5';
+// Paths are relative to where the app is hosted (/ locally, /StudyFlow/ on GitHub Pages).
+const BASE = new URL('./', self.location).pathname;
+const SHELL = ['', 'index.html', 'manifest.json', 'src/studyflow/brand/mark.svg', 'src/studyflow/brand/app-icon-180.png', 'src/studyflow/brand/app-icon-192.png', 'src/studyflow/brand/app-icon-512.png', 'src/studyflow/bootstrap.mjs', 'src/studyflow/app.mjs', 'src/studyflow/styles.css', 'src/studyflow/depth.css', 'src/studyflow/motion.mjs', 'src/studyflow/forms.mjs', 'src/studyflow/views.mjs', 'src/studyflow/planner.mjs', 'src/studyflow/store.mjs', 'src/studyflow/tour.mjs', 'src/studyflow/datepicker.mjs', 'src/studyflow/helper.mjs'].map(path => BASE + path);
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
 });
@@ -8,7 +10,7 @@ self.addEventListener('activate', event => {
 });
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
-  const appAsset = SHELL.includes(url.pathname) || (url.pathname.startsWith('/src/studyflow/') && /\.(mjs|css|svg|png|webp)$/.test(url.pathname));
+  const appAsset = SHELL.includes(url.pathname) || (url.pathname.startsWith(BASE + 'src/studyflow/') && /\.(mjs|css|svg|png|webp)$/.test(url.pathname));
   if (event.request.method !== 'GET' || url.origin !== self.location.origin || !appAsset) return;
   event.respondWith(fetch(event.request).then(response => {
     if (response.ok) {

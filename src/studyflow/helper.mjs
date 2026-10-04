@@ -10,7 +10,8 @@ const ERRORS = {
  'busy':'העוזר עמוס כרגע. אפשר לנסות שוב בעוד דקה.',
  'offline':'אין חיבור לאינטרנט, אז העוזר לא יכול לעבוד כרגע.',
  'refused':'העוזר לא יכול לעזור עם הבקשה הזאת. אפשר לנסח אחרת.',
- 'server':'אין חיבור ל־StudyFlow. צריך לוודא שהחלון השחור פתוח.'
+ 'server':'אין חיבור ל־StudyFlow. צריך לוודא שהחלון השחור פתוח.',
+ 'online':'באתר באינטרנט העוזר החכם עוד לא זמין. הוא עובד כשפותחים את StudyFlow במחשב, דרך הקובץ Open StudyFlow Handmade. בינתיים אפשר להוסיף משימות בכפתור "הוספת משימה".'
 };
 
 export function helperForm() {
@@ -64,9 +65,10 @@ export function setupHelper(root, {describe, add, today, weekday}) {
   error.textContent = ''; results.innerHTML = '';
   go.disabled = true; go.classList.add('thinking'); go.querySelector('span').textContent = 'רגע, חושבים';
   try {
-   const response = await fetch('/api/assistant', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({text: said, today, weekday})});
+   const response = await fetch('api/assistant', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({text: said, today, weekday})});
    const body = await response.json().catch(() => ({}));
-   if (!response.ok) { error.textContent = ERRORS[body.error] || 'משהו השתבש. אפשר לנסות שוב.'; return; }
+   // A plain web host (e.g. GitHub Pages) has no helper server behind it.
+   if (!response.ok) { error.textContent = ERRORS[body.error] || ([404, 405, 501].includes(response.status) ? ERRORS.online : 'משהו השתבש. אפשר לנסות שוב.'); return; }
    items = (body.items || []).map(item => ({...item, ...describe(item)}));
    showResults(body.reply);
   } catch { error.textContent = ERRORS.server; }
