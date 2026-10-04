@@ -1,31 +1,9 @@
-/* A sculpted progress token: native vectors and CSS stay sharp at every density. */
-.focus-sculpture{width:136px;height:136px;position:relative;flex-shrink:0;perspective:600px;pointer-events:none}
-.sculpture-body{position:absolute;inset:8%;transform-style:preserve-3d;animation:sculpture-drift 7s ease-in-out infinite}
-.sculpture-orb{position:absolute;inset:17%;border-radius:50%;background:radial-gradient(circle at 30% 22%,#c3fff1 0,#52c9bb 22%,#09878d 53%,#035764 78%,#02353e 100%);box-shadow:inset -6px -9px 14px #013a5555,inset 2px 3px 5px #fff9,8px 15px 22px #12586933;transform:translateZ(22px);display:grid;place-items:center}
-.sculpture-orb:before{content:'';position:absolute;inset:8% 18% 60% 14%;border-radius:50%;background:linear-gradient(#fff9,#fff0);filter:blur(2px);transform:rotate(-30deg)}
-.sculpture-orb span{color:white;font-size:23px;font-weight:700;text-shadow:0 2px 3px #004955;transform:translateZ(5px)}
-.sculpture-orb .icon{width:37px;height:37px;stroke-width:2.5}
-.sculpture-ring{position:absolute;inset:0;border:10px solid #b9e3d8;border-top-color:#fff4da;border-right-color:#7aa9a7;border-radius:50%;transform:rotateX(58deg) rotateY(-19deg) rotateZ(-20deg);box-shadow:0 5px 0 #609898,0 7px 0 #477879,inset 0 2px 3px #fff; background:conic-gradient(from 90deg,#f3c99c var(--progress),transparent 0)}
-.sculpture-pearl{position:absolute;width:17%;height:17%;top:10%;left:5%;border-radius:50%;background:radial-gradient(circle at 28% 22%,#fff6e1,#f3c99c 45%,#bd8450);box-shadow:2px 5px 8px #674b3526;transform:translateZ(40px)}
-.sculpture-shadow{position:absolute;width:65%;height:12%;bottom:3%;left:17%;background:#16575730;border-radius:50%;filter:blur(8px);animation:sculpture-shadow 7s ease-in-out infinite}
-.page-heading>.focus-sculpture{order:2;margin-inline-start:auto}
-.page-heading>.heading-add{order:3}
-.page-heading>.heading-copy{min-width:0}
-.sculpture-stage{position:absolute;left:3%;top:10%;width:40%;height:80%;display:grid;place-items:center}
-.sculpture-stage .focus-sculpture{width:260px;height:260px}
-.sculpture-stage .sculpture-orb .icon{width:65px;height:65px}
-.series-end{font-size:11px;line-height:1.8;color:#657b82;margin:0 0 10px}
-#repeat-summary{font-size:12px;line-height:1.9;color:#315f64;border-inline-start:3px solid #55ab9f;padding-inline-start:12px;margin-top:18px}
-.form-kind-help{font-size:12px;line-height:1.8;color:#617985;margin:-10px 0 18px}
+/* Small pieces of the recurring-event form and the completion animation. */
+.series-end{font-size:13px;line-height:1.8;color:#657b82;margin:0 0 10px}
+#repeat-summary{font-size:13px;line-height:1.9;color:#315f64;border-inline-start:3px solid #55ab9f;padding-inline-start:12px;margin-top:18px}
+.form-kind-help{font-size:13px;line-height:1.8;color:#617985;margin:-8px 0 18px}
 .stop-series-button{display:block;margin:14px auto 0;color:#9a553d}
-.completion-burst{position:fixed;z-index:30;pointer-events:none;width:9px;height:9px;border-radius:50%;background:#43b9a7;animation:completion-pop 650ms cubic-bezier(.15,.6,.35,1) both}
+.completion-burst{position:fixed;z-index:30;pointer-events:none;width:8px;height:8px;border-radius:50%;background:#43b9a7;animation:completion-pop 600ms cubic-bezier(.15,.6,.35,1) both}
 .completion-burst:nth-of-type(even){background:#e8b379}
-@keyframes sculpture-drift{0%,100%{transform:translateY(3px) rotateY(-10deg) rotateZ(-4deg)}50%{transform:translateY(-9px) rotateY(14deg) rotateZ(5deg)}}
-@keyframes sculpture-shadow{50%{transform:scale(.8);opacity:.55}}
 @keyframes completion-pop{0%{opacity:1;transform:translate(-50%,-50%) scale(.5)}100%{opacity:0;transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy))) scale(.2)}}
-@media(hover:hover){button.primary:hover{transform:translateY(-3px);box-shadow:0 9px 0 #035e63,0 15px 23px #087e8326}.session-card:hover{background:linear-gradient(100deg,transparent,#e8f4ef80)}.day-chip:hover b{transform:translateY(-3px)}}
-button.primary{background:linear-gradient(150deg,#169c99,#087e83 55%,#056369);box-shadow:0 4px 0 #035e63,0 8px 15px #087e8322;border-top:1px solid #ffffff50}
-button.primary:active{transform:translateY(3px);box-shadow:0 1px 0 #035e63}
-.bottom-nav button.mobile-add{background:radial-gradient(circle at 30% 20%,#50c6ba,#087e83 60%,#03535d);box-shadow:inset 0 2px 2px #ffffff80,0 4px 0 #03535d,0 8px 18px #087e8333}
-@media(max-width:650px){.page-heading:has(>.focus-sculpture){display:flex;gap:0}.page-heading>.focus-sculpture{width:90px;height:110px;margin-inline-start:-8px}.page-heading>.heading-copy{flex:1}.page-heading:has(>.focus-sculpture) h1{font-size:27px}.sculpture-orb span{font-size:17px}.sculpture-orb .icon{width:27px;height:27px}.welcome:has(.sculpture-stage){padding-bottom:138px}.sculpture-stage{width:155px;height:155px;left:calc(50% - 77px);top:auto;bottom:0}.sculpture-stage .focus-sculpture{width:155px;height:155px}.sculpture-stage .sculpture-orb .icon{width:42px;height:42px}}
-@media(prefers-reduced-motion:reduce){.sculpture-body,.sculpture-shadow,.completion-burst{animation:none}.completion-burst{display:none}}
+@media(prefers-reduced-motion:reduce){.completion-burst{display:none}}
