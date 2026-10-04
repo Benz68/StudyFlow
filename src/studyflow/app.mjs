@@ -181,7 +181,9 @@ document.addEventListener('click',event=>{
    const stopId=sheet.dataset.stopId,today=localDate(),yesterday=new Date(`${today}T12:00:00`);yesterday.setDate(yesterday.getDate()-1);
    mutate(()=>{state.events=state.events.flatMap(item=>item.id!==stopId?[item]:item.date>=today?[]:[{...item,repeatUntil:item.repeatUntil&&item.repeatUntil<today?item.repeatUntil:localDate(yesterday)}]);},'הפעילות הופסקה מהיום. התוכנית עודכנה.');close();break;
   }
-  case 'demo':if(!state.tasks.length&&!state.events.length){realState=clone(state);state={...demoState(),demo:true};undoState=null;render();}break;
+  case 'demo':if(!state.tasks.length&&!state.events.length){realState=clone(state);state={...demoState(),demo:true};undoState=null;render();
+   // Late in the day today can be empty, so open the sample on the first day that has something in it.
+   const busy=weekDates().find(date=>plan.sessions.some(s=>s.date===date));if(busy&&busy!==selected){selected=busy;render();}}break;
   case 'exit-demo':if(realState){state=realState;realState=null;undoState=null;selected=localDate();render();toast('המרחב שלך מוכן. מתחילים במשימה אחת.');}break;
   case 'replan':render();toast(plan.unscheduled.length?'עדכנו את התוכנית. כמה משימות עדיין צריכות מקום.':'התוכנית מעודכנת לפי הזמן הפנוי שלך.');break;
   case 'complete-session':{
@@ -266,4 +268,6 @@ document.addEventListener('change',async event=>{
  }catch{toast('לא הצלחנו לקרוא את הגיבוי. יש לבחור קובץ גיבוי תקין של StudyFlow.');}
 });
 render();
+// The AI helper needs the local server; on a plain web host (GitHub Pages) its buttons are hidden.
+fetch('api/assistant').then(r=>r.ok?r.json():null).catch(()=>null).then(info=>{if(!info?.available)document.body.classList.add('no-helper');});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!sheet.open)render();});

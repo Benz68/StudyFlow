@@ -14,6 +14,7 @@ const server = createServer(async (request, response) => {
   response.setHeader('X-Content-Type-Options', 'nosniff');
   response.setHeader('Cache-Control', 'no-store');
   if (request.method === 'POST' && request.url === '/api/assistant') return assistant(request, response);
+  if (request.method === 'GET' && request.url === '/api/assistant') { response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }); return response.end('{"available":true}'); }
   if (!['GET', 'HEAD'].includes(request.method)) {
     response.writeHead(405, { Allow: 'GET, HEAD' });
     return response.end();

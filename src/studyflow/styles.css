@@ -444,3 +444,12 @@ button{transition:background .2s var(--ease),color .2s var(--ease),box-shadow .2
 @keyframes mic-ring{from{transform:scale(1);opacity:.8}to{transform:scale(1.35);opacity:0}}
 @keyframes dots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
 @media(hover:hover){.helper-button:hover{background:transparent;box-shadow:inset 0 0 0 1.5px var(--ring)}.helper-mic:hover{box-shadow:0 0 0 3px var(--ring-gap),0 0 0 4.5px var(--ring)}}
+/* Phone comfort */
+.no-helper [data-action="helper"]{display:none!important}
+.week-total{font-size:14px;color:var(--muted);margin:-8px 0 14px}
+@media(max-width:650px){
+ input,select,textarea,#helper-text{font-size:16px}
+ .topbar{padding-top:env(safe-area-inset-top);height:calc(64px + env(safe-area-inset-top))}
+ #add-form .submit-button,#settings-form .submit-button,.helper-add{position:sticky;bottom:0;z-index:2;box-shadow:0 -14px 14px -4px #fffdf6}
+ .form-footnote{display:none}
+}
