@@ -9,7 +9,7 @@
   "scope": "/",
   "display": "standalone",
   "background_color": "#F5F7FA",
-  "theme_color": "#087E83",
+  "theme_color": "#F5F7FA",
   "icons": [
     {
       "src": "/src/studyflow/brand/app-icon-192.png",

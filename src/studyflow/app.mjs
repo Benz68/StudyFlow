@@ -5,13 +5,33 @@ import {addForm,settingsForm,proContent} from './forms.mjs';
 import {celebrateCompletion} from './motion.mjs';
 
 let state=loadState(), plan, view='today', selected=localDate(), undoState=null;
-let realState=null, editing=null, returnFocus=null, toastTimer, storageFailed=false;
+let realState=null, editing=null, returnFocus=null, toastTimer, storageFailed=false, addDrafts={};
 const app=document.querySelector('#app');
 app.innerHTML=shell();
 const sheet=document.querySelector('#sheet');
 const main=document.querySelector('#main');
 const clone=value=>JSON.parse(JSON.stringify(value));
+document.documentElement.dataset.inputModality='pointer';
+document.addEventListener('keydown',event=>{
+ if(!event.metaKey&&!event.ctrlKey&&!event.altKey)document.documentElement.dataset.inputModality='keyboard';
+ if(event.key==='Escape'&&sheet.open){event.preventDefault();close();}
+},true);
+document.addEventListener('pointerdown',()=>{document.documentElement.dataset.inputModality='pointer';},true);
+const focusAttributes=['data-action','data-id','data-date','data-view'];
+function rememberFocus(element){
+ if(!element)return null;
+ const attributes=focusAttributes.filter(name=>element.hasAttribute(name)).map(name=>[name,element.getAttribute(name)]);
+ return {element,attributes,index:element.dataset.action?[...main.querySelectorAll('[data-action]')].filter(el=>el.dataset.action===element.dataset.action).indexOf(element):-1};
+}
+function restoreFocus(saved){
+ if(!saved)return;
+ let target=saved.element.isConnected?saved.element:null;
+ if(!target&&saved.attributes.length)target=[...main.querySelectorAll('button,a')].find(el=>saved.attributes.every(([name,value])=>el.getAttribute(name)===value));
+ if(!target&&saved.index>=0){const action=saved.attributes.find(([name])=>name==='data-action')?.[1],peers=[...main.querySelectorAll('[data-action]')].filter(el=>el.dataset.action===action);target=peers[Math.min(saved.index,peers.length-1)];}
+ (target||main).focus({preventScroll:true});
+}
 function render(){
+ const focused=main.contains(document.activeElement)?rememberFocus(document.activeElement):null;
  plan=buildPlan(state);
  const dates=weekDates();if(!dates.includes(selected))selected=localDate();
  main.innerHTML=renderMain({state:{...state,eventSeries:state.events,events:expandEvents(state.events)},plan,view,selected,dates,today:localDate()});
@@ -20,6 +40,7 @@ function render(){
   const active=el.dataset.view===view;el.classList.toggle('active',active);
   if(active)el.setAttribute('aria-current','page');else el.removeAttribute('aria-current');
  });
+ if(focused&&!sheet.open)restoreFocus(focused);
 }
 function toast(message,undo=false){
  clearTimeout(toastTimer); const el=document.querySelector('#toast');el.replaceChildren();
@@ -31,11 +52,41 @@ function mutate(change,message){
  undoState=clone(state);change();const saved=state.demo||saveState(state);storageFailed=!saved;render();
  toast(saved?(typeof message==='function'?message():message):'השינוי מוצג, אבל לא נשמר במכשיר. אפשר להוריד גיבוי דרך ההעדפות.',true);
 }
-function open(content){returnFocus=document.activeElement;sheet.innerHTML=content;if(!sheet.open)sheet.showModal();document.body.classList.add('dialog-open');setTimeout(()=>sheet.querySelector('[autofocus],input,button')?.focus(),0);}
-function close(){sheet.close();}
-sheet.addEventListener('close',()=>{document.body.classList.remove('dialog-open');editing=null;if(returnFocus?.isConnected)returnFocus.focus();else main.focus();});
+function open(content){
+ if(!sheet.open)returnFocus=rememberFocus(document.activeElement);
+ sheet.innerHTML=content;
+ const touchOpening=matchMedia('(pointer: coarse)').matches&&document.documentElement.dataset.inputModality!=='keyboard';
+ const heading=sheet.querySelector('#dialog-title');
+ if(touchOpening){sheet.querySelectorAll('[autofocus]').forEach(el=>el.removeAttribute('autofocus'));if(heading){heading.tabIndex=-1;heading.setAttribute('autofocus','');}}
+ if(!sheet.open)sheet.showModal();
+ document.body.classList.add('dialog-open');
+ (touchOpening?heading:sheet.querySelector('[autofocus],input,button'))?.focus({preventScroll:true});
+}
+function finishClose(){
+ if(sheet.open)return;
+ document.body.classList.remove('dialog-open');editing=null;addDrafts={};
+ const saved=returnFocus;returnFocus=null;restoreFocus(saved);
+}
+function close(){sheet.close();finishClose();}
+sheet.addEventListener('cancel',event=>{event.preventDefault();close();});
+sheet.addEventListener('close',finishClose);
 sheet.addEventListener('click',event=>{if(event.target===sheet){const r=sheet.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)close();}});
-function showAdd(tab='task'){editing=null;open(addForm(localDate(),weekDates()[6],tab));if(tab==='event')updateRepeat();}
+function showAdd(tab='task',switching=false){
+ const previous=sheet.querySelector('#add-form');
+ if(switching&&previous){
+  addDrafts[previous.dataset.kind]={fields:[...previous.elements].filter(el=>el.name).map(el=>({name:el.name,value:el.value,checked:el.checked})),expanded:[...previous.querySelectorAll('details')].map(el=>el.open)};
+ }else addDrafts={};
+ const title=switching?previous?.elements.title.value:'';
+ editing=null;open(addForm(localDate(),weekDates()[6],tab));
+ const form=sheet.querySelector('#add-form'),draft=addDrafts[tab];
+ if(draft){
+  for(const field of draft.fields){const controls=[...form.elements].filter(el=>el.name===field.name);for(const el of controls){if(el.type==='checkbox'||el.type==='radio'){if(el.value===field.value)el.checked=field.checked;}else el.value=field.value;}}
+  form.querySelectorAll('details').forEach((el,index)=>{el.open=draft.expanded[index];});
+ }else if(title)form.elements.title.value=title;
+ if(tab==='event')updateRepeat();
+ else form.querySelectorAll('[data-minutes]').forEach(el=>el.classList.toggle('active',el.dataset.minutes===form.elements.minutes.value));
+ if(switching)sheet.querySelector(`[data-form-tab="${tab}"]`)?.focus({preventScroll:true});
+}
 function editTask(id){
  const task=state.tasks.find(t=>t.id===id);if(!task)return;
  open(addForm(localDate(),task.deadline));editing=id;
@@ -111,7 +162,7 @@ document.addEventListener('click',event=>{
  if(target.matches('a.brand')){event.preventDefault();view='today';selected=localDate();render();return;}
  if(target.dataset.view){view=target.dataset.view;if(view==='today')selected=localDate();render();main.focus();return;}
  if(target.dataset.date&&!target.dataset.action){selected=target.dataset.date;if(view==='week')view='today';render();return;}
- if(target.dataset.formTab){showAdd(target.dataset.formTab);return;}
+ if(target.dataset.formTab){showAdd(target.dataset.formTab,true);return;}
  if(target.dataset.minutes){sheet.querySelector('[name=minutes]').value=target.dataset.minutes;sheet.querySelectorAll('[data-minutes]').forEach(b=>b.classList.toggle('active',b===target));return;}
  const id=target.dataset.id;
  switch(target.dataset.action){

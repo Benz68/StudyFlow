@@ -1,6 +1,6 @@
 // A brief local acknowledgment; never delays saving or changes keyboard focus.
 export function celebrateCompletion(button){
- if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+ if(matchMedia('(prefers-reduced-motion: reduce)').matches||document.documentElement.dataset.inputModality==='keyboard')return;
  const rect=button.getBoundingClientRect();
  for(let i=0;i<9;i++){
   const dot=document.createElement('i');dot.className='completion-burst';dot.ariaHidden='true';
