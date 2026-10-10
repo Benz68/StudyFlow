@@ -2,6 +2,36 @@
 .weekly-intro p{margin-top:6px;color:var(--muted);font-size:14px}
 .weekly-actions{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;margin-top:12px}
 .weekly-actions .primary{padding:10px 18px}
+.next-step{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 16px;margin:-8px 0 22px;padding:12px 16px;border:1px solid var(--line);border-radius:14px;background:var(--warm)}
+.next-step p{font-size:15px}
+.next-step .primary{padding:10px 18px}
+#sheet fieldset{border:0;padding:0;margin:20px 0 4px;min-width:0}
+#sheet fieldset legend{font-size:14px;font-weight:600;margin-bottom:10px;padding:0}
+.choice-chips{display:flex;flex-wrap:wrap;gap:8px}
+.choice-chips label{position:relative;cursor:pointer;margin:0}
+.choice-chips input{position:absolute;opacity:0;inset:0;width:100%;height:100%;margin:0;cursor:pointer}
+.choice-chips span{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:42px;padding:8px 14px;border:1px solid #ddd2bf;border-radius:14px;font-size:14px;line-height:1.3;text-align:center;background:var(--card);transition:background .2s,border-color .2s}
+.choice-chips small{font-size:12px;color:var(--muted);font-weight:400;margin-top:2px}
+.choice-chips label:hover span{border-color:#c9b99d}
+.choice-chips input:checked+span{background:var(--teal-soft);border-color:var(--teal);color:var(--teal);font-weight:600}
+.choice-chips input:focus-visible+span{outline:3px solid #dc9a57}
+.day-chips label{flex:1;min-width:44px}.day-chips span{padding:6px 4px;min-height:52px}.day-chips small{font-size:15px;color:inherit;font-weight:600}
+.quick-picks{display:flex;gap:12px;margin:-4px 0 8px}.quick-picks .text-button{padding:2px 0;font-size:13px}
+.review-note{background:var(--warm);border-radius:12px;padding:12px 14px;margin:14px 0;font-size:14px}
+.review-summary{border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin:16px 0 4px;background:var(--card)}
+.review-summary h3{font-size:15px;margin-bottom:8px}.review-summary>p{font-size:14px;color:var(--muted);margin-top:8px}
+.review-goal{padding:6px 0}.review-goal>div:first-child{display:flex;justify-content:space-between;gap:12px;font-size:14px}.review-goal span{color:var(--muted);white-space:nowrap}
+.mini-bar{height:8px;border-radius:8px;background:var(--line);overflow:hidden;margin-top:6px;flex:1}.mini-bar i{display:block;height:100%;background:var(--accent,var(--teal));border-radius:8px}
+.courses-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:-8px 0 18px}
+.course-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
+.course-card{background:var(--card);border:1px solid var(--line);border-top:5px solid var(--accent);border-radius:20px;padding:18px 20px;display:flex;flex-direction:column;gap:10px;box-shadow:0 1px 1px #0000000a,0 8px 14px -10px #00000040}
+.course-card-top{display:flex;flex-direction:column;gap:8px}.course-card h3{font-family:'Amatic SC',Heebo,sans-serif;font-size:32px;line-height:1.1}
+.course-chips{display:flex;gap:6px;flex-wrap:wrap}
+.course-chip{font-size:12px;padding:3px 10px;border-radius:20px;background:var(--bg);border:1px solid var(--line);color:var(--muted)}
+.course-chip.urgent{background:#fbe3d9;border-color:#e7b3a0;color:#963622;font-weight:600}
+.course-progress{display:flex;align-items:center;gap:10px}.course-progress .mini-bar{margin:0}.course-progress b{font-size:14px;color:var(--accent)}
+.course-meta{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px;flex-wrap:wrap}.course-meta .icon{width:16px;height:16px}.course-meta .text-button{font-size:13px;padding:0}
+.course-actions{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:auto;padding-top:6px;border-top:1px dashed var(--line)}
 .weekly-goals{margin:20px 0 30px}.weekly-goals h2{font-size:20px;margin-bottom:12px}
 .weekly-session-actions{flex-wrap:wrap;gap:4px 10px}
 .weekly-preview{max-height:45vh;overflow:auto;margin:18px 0;overscroll-behavior:contain}

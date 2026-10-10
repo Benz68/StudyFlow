@@ -9,8 +9,32 @@ function progress(course) {
   const p = courseProgress(course);
   return p.total ? `<p>${p.ready} מתוך ${p.total} נושאים מוכנים · ${p.learning} בלמידה</p><progress max="${p.total}" value="${p.ready}" aria-label="ההתקדמות בקורס ${esc(course.name)}">${p.percent}%</progress>` : '<p class="field-help">מוסיפים נושאים כשנוח לך. אפשר להתחיל גם בלי סילבוס.</p>';
 }
+const accents = ['#b8452f', '#0b7f84', '#5b6bbf', '#b07a1f', '#8a4f9e', '#3f8a4f'];
+const difficultyLabel = {1: 'הולך בקלות', 2: 'צריך תרגול', 3: 'מאתגר כרגע'};
+const today = () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); };
+function examChip(date) {
+  if (!date) return '';
+  const days = Math.round((new Date(`${date}T00:00:00`) - today()) / 86400000);
+  const label = days < 0 ? 'המבחן עבר' : days === 0 ? 'מבחן היום' : days === 1 ? 'מבחן מחר' : `מבחן בעוד ${days} ימים`;
+  return `<span class="course-chip ${days >= 0 && days <= 14 ? 'urgent' : ''}" title="${esc(new Date(`${date}T12:00:00`).toLocaleDateString('he-IL'))}">${label}</span>`;
+}
+// The recurring "practice this course" goal the course form manages.
+const weeklyGoal = (state, id) => (state.goals || []).find(g => g.courseId === id && g.repeatWeekly && !g.topicId);
 export function renderCourses(state) {
-  return `<section class="weekly-goals courses-area"><div class="weekly-actions"><h2>הקורסים שלי</h2>${button('edit', `${icon('plus')} קורס חדש`)}</div><p class="field-help">ההתקדמות לפי ההרגשה שלך בכל נושא. זמן הלמידה מוצג בנפרד.</p>${(state.courses || []).map(course => `<article class="course-row"><h3>${esc(course.name)}</h3>${progress(course)}<small class="field-help">${duration(courseLearningMinutes(state, course.id))} למידה שדיווחת השבוע${course.examDate ? ` · מבחן ב־${esc(course.examDate)}` : ''}</small><div class="weekly-actions">${button('open', 'לנושאים ולהתקדמות', course.id)}${button('goal', 'להוסיף למטרות השבוע', course.id)}${button('edit', 'עריכת קורס', course.id)}</div></article>`).join('') || '<p>הקורס הראשון שלך מתחיל כאן. מספיק שם כדי לצאת לדרך.</p>'}</section>`;
+  const courses = state.courses || [];
+  const head = `<section class="page-heading"><div class="eyebrow">כל הקורסים במקום אחד</div><h1>הקורסים</h1></section>`;
+  if (!courses.length) return `${head}<section class="welcome"><div class="welcome-icon">${icon('tasks')}</div><h2>עוד אין כאן קורסים</h2><p>מוסיפים קורס, בוחרים כמה זמן להקדיש לו כל שבוע, והוא ישובץ לבד בזמן הפנוי.</p><button class="primary" data-course-action="edit">${icon('plus')} הוספת קורס ראשון</button></section>`;
+  const cards = courses.map((course, index) => {
+    const p = courseProgress(course), goal = weeklyGoal(state, course.id), learned = courseLearningMinutes(state, course.id);
+    return `<article class="course-card" style="--accent:${accents[index % accents.length]}">
+      <div class="course-card-top"><h3>${esc(course.name)}</h3><div class="course-chips"><span class="course-chip">${difficultyLabel[course.difficulty] || difficultyLabel[2]}</span>${examChip(course.examDate)}</div></div>
+      ${p.total ? `<div class="course-progress"><div class="mini-bar"><i style="width:${p.percent}%"></i></div><b>${p.percent}%</b></div><p class="course-meta">${p.ready} מתוך ${p.total} נושאים מוכנים${p.learning ? ` · ${p.learning} בלמידה` : ''}</p>`
+        : `<p class="course-meta">עוד אין נושאים. ${button('topics', 'להוסיף מהסילבוס', course.id)}</p>`}
+      <p class="course-meta">${icon('clock')} ${goal ? `${duration(goal.minutes)} בכל שבוע` : 'עוד לא הוקצה זמן קבוע'}${learned ? ` · השבוע: ${duration(learned)}` : ''}</p>
+      <div class="course-actions">${button('open', 'נושאים והתקדמות', course.id)}${goal ? '' : button('goal', 'להקדיש זמן השבוע', course.id)}${button('edit', 'עריכה', course.id)}</div>
+    </article>`;
+  }).join('');
+  return `${head}<div class="courses-toolbar"><p class="field-help">ההתקדמות לפי ההרגשה שלך בכל נושא. מבחן קרוב מקבל עדיפות בתכנון.</p><button class="primary" data-course-action="edit">${icon('plus')} קורס חדש</button></div><div class="course-grid">${cards}</div>`;
 }
 
 export function setupCoursesUI(ctx) {
@@ -27,8 +51,17 @@ export function setupCoursesUI(ctx) {
     open(`${heading(course.name)}${progress(course)}<p class="field-help">${duration(courseLearningMinutes(state, id))} למידה שדיווחת השבוע. סימון נושא אינו תלוי בכמות השעות.</p><div class="weekly-actions">${button('topics', 'הוספת נושאים / סילבוס', id)}${button('goal', 'להוסיף למטרות השבוע', id)}</div>${normalizeTopics(course.topics).map(topic => `<div class="course-topic"><label for="topic-${esc(topic.id)}">${esc(topic.title)}</label><select id="topic-${esc(topic.id)}" data-course-status="${esc(id)}" data-topic-id="${esc(topic.id)}">${labels.map(([value, title]) => `<option value="${value}" ${value === topic.status ? 'selected' : ''}>${title}</option>`).join('')}</select>${button('goal', 'להקדיש לזה זמן השבוע', id, `data-topic-id="${esc(topic.id)}"`)}</div>`).join('')}${error}`);
   }
   function edit(id) {
-    const course = getState().courses.find(item => item.id === id) || {};
-    open(`${heading(course.id ? 'עריכת קורס' : 'קורס חדש')}<form id="course-edit" data-id="${esc(id || '')}"><label for="course-name">שם הקורס</label><input id="course-name" name="name" maxlength="120" value="${esc(course.name || '')}" required autofocus><label for="course-difficulty">איך הולך כרגע?</label><select id="course-difficulty" name="difficulty">${[['1','די נוח'],['2','צריך תרגול'],['3','מאתגר כרגע']].map(([v,t])=>`<option value="${v}" ${Number(v)===(course.difficulty || 2)?'selected':''}>${t}</option>`).join('')}</select><label for="course-exam">מועד מבחן (לא חובה)</label><input id="course-exam" name="examDate" type="date" value="${esc(course.examDate || '')}">${error}<button class="primary submit-button">לשמור קורס</button></form>`);
+    const state = getState(), course = state.courses.find(item => item.id === id) || {};
+    const minutes = course.id ? weeklyGoal(state, course.id)?.minutes || 0 : 120;
+    const hours = [[0, 'עוד לא'], [60, 'שעה'], [120, 'שעתיים'], [180, '3 שעות'], [300, '5 שעות']];
+    if (!hours.some(([m]) => m === minutes)) hours.push([minutes, duration(minutes)]);
+    const radios = (name, items, value) => `<div class="choice-chips">${items.map(([v, t, sub]) => `<label><input type="radio" name="${name}" value="${v}" ${String(v) === String(value) ? 'checked' : ''}><span>${t}${sub ? `<small>${sub}</small>` : ''}</span></label>`).join('')}</div>`;
+    open(`${heading(course.id ? 'עריכת קורס' : 'קורס חדש')}<form id="course-edit" data-id="${esc(id || '')}">
+      <label for="course-name">שם הקורס</label><input id="course-name" name="name" maxlength="120" value="${esc(course.name || '')}" required autofocus placeholder="למשל, סטטיסטיקה א׳">
+      <fieldset><legend>כמה זמן לקורס בכל שבוע?</legend>${radios('weeklyMinutes', hours, minutes)}<small class="field-help">נשבץ את הזמן הזה לבד בכל שבוע. אפשר לשנות בכל רגע.</small></fieldset>
+      <fieldset><legend>איך הולך בקורס?</legend>${radios('difficulty', [[1, 'הולך בקלות'], [2, 'צריך תרגול'], [3, 'מאתגר', 'מפגשים קצרים יותר']], course.difficulty || 2)}</fieldset>
+      <label for="course-exam">מתי המבחן? (לא חובה)</label><input id="course-exam" name="examDate" type="date" value="${esc(course.examDate || '')}"><small class="field-help">כשהמבחן מתקרב, הקורס יקבל עדיפות בתכנון.</small>
+      ${error}<button class="primary submit-button">${course.id ? 'לשמור שינויים' : 'להוסיף קורס'}</button></form>`);
   }
   function topics(id) {
     const course = getState().courses.find(item => item.id === id); if (!course) return;
@@ -74,7 +107,17 @@ export function setupCoursesUI(ctx) {
       if (form.id === 'course-edit') {
         const name = String(fd.get('name') || '').trim(); if (!name || name.length > 120) throw Error('נבחר שם לקורס, עד 120 תווים.');
         if (!previous && getState().courses.length >= 100) throw Error('אפשר לשמור עד 100 קורסים.');
-        saveCourse({...previous, id: previous?.id || crypto.randomUUID(), name, difficulty: Number(fd.get('difficulty')), examDate: fd.get('examDate'), topics: previous?.topics || []}, 'הקורס נשמר.'); close();
+        const course = {...previous, id: previous?.id || crypto.randomUUID(), name, difficulty: Number(fd.get('difficulty')) || 2, examDate: fd.get('examDate'), topics: previous?.topics || []};
+        const minutes = Number(fd.get('weeklyMinutes')) || 0;
+        mutate(() => {
+          const state = getState(), goal = weeklyGoal(state, course.id);
+          const courses = state.courses.some(item => item.id === course.id) ? state.courses.map(item => item.id === course.id ? course : item) : [...state.courses, course];
+          // The course's weekly time is a recurring goal, so the planner places it every week.
+          const goals = goal ? (minutes ? state.goals.map(g => g === goal ? {...g, minutes, title: `לתרגל ${name}`} : g) : state.goals.filter(g => g !== goal))
+            : minutes ? [...state.goals, {id: crypto.randomUUID(), title: `לתרגל ${name}`, courseId: course.id, minutes, category: 'study', priority: 'normal', sessionMinutes: 50, preferredTime: 'any', repeatWeekly: true, weekStart: state.weekly.weekStart}] : state.goals;
+          replace({...state, courses, goals});
+        }, minutes ? `הקורס נשמר. ${duration(minutes)} בכל שבוע ישובצו לבד.` : 'הקורס נשמר.');
+        close();
       } else {
         if (!previous) throw Error('הקורס לא נמצא.');
         const imported = topicsFromText(String(fd.get('topics') || ''), previous.topics);

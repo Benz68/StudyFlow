@@ -36,9 +36,12 @@ function restoreFocus(saved){
  (target||main).focus({preventScroll:true});
 }
 function render(){
+ // Re-rendering replaces the buttons, so keep keyboard focus on the matching new one.
+ const focused=main.contains(document.activeElement)&&document.activeElement!==main?rememberFocus(document.activeElement):null;
  state={...state,...normalizeWeekly(state)};plan=buildWeeklyPlan(state);state.weekly.sessions=plan.retainedSessions;main.classList.remove('fade');
- const dates=weekDates(new Date(plan.weekStart+'T12:00:00'));if(!dates.includes(selected))selected=dates.includes(localDate())?localDate():dates[0];
- main.innerHTML=view==='courses'?renderCourses(state):weeklyPanel(state,plan,view)+renderMain({state:{...state,eventSeries:state.events,events:expandEvents(state.events,new Date(plan.weekStart+'T12:00:00'))},plan,view,selected,dates,today:localDate()});
+ const dates=plan.dates;if(!dates.includes(selected))selected=dates.includes(localDate())?localDate():dates[0];
+ const shown={...state,eventSeries:state.events,events:expandEvents(state.events,new Date(dates[0]+'T12:00:00'))};
+ main.innerHTML=view==='courses'?renderCourses(state):renderMain({state:shown,plan,view,selected,dates,today:localDate(),panel:weeklyPanel(state,plan,view)});
  if(storageFailed)main.insertAdjacentHTML('afterbegin','<p class="storage-warning" role="alert">השמירה במכשיר אינה זמינה. כדאי להוריד גיבוי דרך ההעדפות לפני סגירת הדף.</p>');
  document.querySelectorAll('[data-view]').forEach(el=>{
   const active=el.dataset.view===view;el.classList.toggle('active',active);
@@ -72,7 +75,7 @@ function open(content){
 }
 function finishClose(){
  if(sheet.open)return;
- document.body.classList.remove('dialog-open');editing=null;addDrafts={};
+ document.body.classList.remove('dialog-open');editing=null;formDrafts={};
  const saved=returnFocus;returnFocus=null;restoreFocus(saved);
 }
 function close(){sheet.close();finishClose();}

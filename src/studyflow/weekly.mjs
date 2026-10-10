@@ -11,11 +11,14 @@ const list = a => Array.isArray(a) ? a : [];
 const choice = (v, options, fallback) => options.includes(v) ? v : fallback;
 const priorities = ['high', 'normal', 'low'];
 const unique = a => [...new Map(a.map(x => [x.id, x])).values()];
+const changeModes = ['off', 'less', 'tired', 'more'];
 
 export function normalizeWeekly(value = {}, now = new Date(), nested = false) {
   if (!nested && validDate(value.weekly?.nextWeek?.weekly?.weekStart) && value.weekly.nextWeek.weekly.weekStart <= localDate(now)) {
     const future = value.weekly.nextWeek;
-    value = {...value,goals:future.goals,courses:Array.isArray(value.courses) ? value.courses : future.courses,weekly:future.weekly};
+    // Days already marked as changed keep their mark when the planned week opens.
+    const marked = list(future.weekly.overrides), carried = list(value.weekly.overrides).filter(o => o?.date >= future.weekly.weekStart && !marked.some(m => m?.date === o.date));
+    value = {...value,goals:future.goals,courses:Array.isArray(value.courses) ? value.courses : future.courses,weekly:{...future.weekly,overrides:[...carried,...marked]}};
   }
   const w = value.weekly || {};
   const start = validDate(w.weekStart) ? weekStart(w.weekStart) : weekStart(now);
@@ -52,7 +55,8 @@ export function normalizeWeekly(value = {}, now = new Date(), nested = false) {
     reviews: list(w.reviews).slice(-52).filter(x => x && validDate(x.weekStart)).map(x => ({weekStart: x.weekStart,
       completedMinutes: bounded(x.completedMinutes, 0, 0, 10080), note: clean(x.note, 500)})),
     overrides: list(w.overrides).slice(0, 14).filter(x => x && validDate(x.date)).map(x => ({date: x.date,
-      maxMinutes: bounded(x.maxMinutes, 120, 0, 720), energy: choice(x.energy, ['low', 'normal', 'high'], 'normal')})),
+      maxMinutes: bounded(x.maxMinutes, 120, 0, 720), energy: choice(x.energy, ['low', 'normal', 'high'], 'normal'),
+      ...(changeModes.includes(x.mode) ? {mode: x.mode} : {})})),
   } };
 }
 
@@ -81,16 +85,23 @@ export function buildWeeklyPlan(input, now = new Date()) {
   const state = {...input, ...normalizeWeekly(input, now)}, w = state.weekly, p = normalizePreferences(state.preferences);
   const start = w.weekStart, end = addDays(start, 6), today = localDate(now);
   const dates = Array.from({length: 7}, (_, i) => addDays(start, i));
-  const busy = new Map(dates.map(date => [date, []]));
-  const used = new Map(dates.map(date => [date, 0]));
+  // Weekly goals live in their calendar week, but tasks look at the next seven days,
+  // so a Saturday deadline crunch or a missed review never leaves tasks without room.
+  const first = today > start ? today : start;
+  const shown = Array.from({length: 7}, (_, i) => addDays(first, i));
+  const horizon = [...new Set([...dates, ...shown])].sort();
+  const busy = new Map(horizon.map(date => [date, []]));
+  const used = new Map(horizon.map(date => [date, 0]));
   const cap = date => {
     const override = w.overrides.find(x => x.date === date);
     const energy = override?.energy || w.energy;
-    return Math.min(p.maxDailyMinutes, override?.maxMinutes ?? Infinity,
-      Math.round(({light: 120, balanced: 240, heavy: 360}[w.load]) * ({low: .65, normal: 1, high: 1.15}[energy])));
+    const base = Math.round(({light: 120, balanced: 240, heavy: 360}[w.load]) * ({low: .65, normal: 1, high: 1.15}[energy]));
+    // "I have more time" may go past the usual daily limit, by up to two hours.
+    if (override?.mode === 'more') return Math.min(720, Math.max(base, p.maxDailyMinutes) + 120);
+    return Math.min(p.maxDailyMinutes, override?.maxMinutes ?? Infinity, base);
   };
-  const obstacles = commitmentIntervals(state.events, start, end);
-  for (const item of obstacles) busy.get(item.date).push(item);
+  const obstacles = commitmentIntervals(state.events, horizon[0], horizon[horizon.length - 1]);
+  for (const item of obstacles) busy.get(item.date)?.push(item);
   const sessions = [];
   const blockedSessions = [];
   const reserve = (s, completed = false) => {
@@ -119,13 +130,13 @@ export function buildWeeklyPlan(input, now = new Date()) {
   for (const s of [...w.sessions].sort((a,b) => Number(b.locked)-Number(a.locked))) {
     const key = s.goalId ? `goal:${s.goalId}` : `task:${s.taskId}`;
     const target = active.find(g=>g.key===key);
-    if (!remaining.has(key) || w.completions.some(c => c.sessionId === s.id) || s.date < start || s.date > end) continue;
+    if (!remaining.has(key) || w.completions.some(c => c.sessionId === s.id) || (s.goalId ? s.date < start || s.date > end : !busy.has(s.date))) continue;
     if (w.skippedGoalIds.includes(s.goalId) && !isProtected(s)) continue;
     const past = s.date < today || (s.date === today && timeMinutes(s.start) < now.getHours()*60+now.getMinutes());
     const deferred = target.notBefore && new Date(`${s.date}T${s.start}`) < new Date(target.notBefore);
     if (!deferred && s.minutes <= remaining.get(key) && (!target.deadline || s.date <= target.deadline) && (past || fits(s))) {
       sessions.push({...s,title:target.title,...(past ? {needsUpdate:true} : {})}); reserve(s); remaining.set(key, remaining.get(key)-s.minutes);
-    } else if (s.locked && s.date >= today && s.date <= end) {
+    } else if (s.locked && s.date >= today && s.date <= (s.goalId ? end : horizon[horizon.length - 1])) {
       blockedSessions.push(s);
       unscheduled.push({goalId: s.goalId, taskId:s.taskId, title:s.title, minutes:Math.min(s.minutes, remaining.get(key)), reason:'מפגש נעול אינו מתאים לזמינות החדשה. יש לשנות או לשחרר אותו.', lockedConflict: true});
       remaining.set(key, Math.max(0, remaining.get(key)-s.minutes));
@@ -142,11 +153,13 @@ export function buildWeeklyPlan(input, now = new Date()) {
     const pref = !g.preferredTime || ['any','inherit'].includes(g.preferredTime) ? p.preferredTime : g.preferredTime;
     const window = {any:[0,1440],morning:[0,720],afternoon:[720,1020],evening:[1020,1440]}[pref];
     while (left > 0) {
+      // Split a slightly oversized remainder evenly rather than leave a tiny tail.
+      const want = left > length && left - length < 15 ? Math.ceil(left / 2) : length;
       const candidates = [];
-      for (const date of dates) {
+      for (const date of g.legacy ? horizon : dates) {
         if (date < today || (g.deadline && date > g.deadline) || (g.notBefore && date < localDate(new Date(g.notBefore)))) continue;
         const override = w.overrides.find(x => x.date === date);
-        const maximum = Math.min(left,length,override?.energy === 'low' ? 30 : 180,cap(date)-used.get(date));
+        const maximum = Math.min(left,want,override?.energy === 'low' ? 30 : 180,cap(date)-used.get(date));
         if (maximum < Math.min(15,left)) continue;
         for (let a = p.startHour*60; a < p.endHour*60; a+=5) {
           const nextBusy = Math.min(p.endHour*60,...busy.get(date).filter(x=>x.start>a).map(x=>x.start));
@@ -161,7 +174,9 @@ export function buildWeeklyPlan(input, now = new Date()) {
           const ideal = pref === 'evening' ? 1080 : pref === 'afternoon' ? 840 : 600;
           const dayGoals = sessions.filter(s=>s.date===date).map(s=>s.goalId || s.taskId);
           const switching = w.fewerSwitches && dayGoals.length && !dayGoals.includes(g.id) ? 450 : 0;
-          const score = (fallback ? 10000 : 0) + switching + used.get(date)*3 + Math.abs(a-ideal)/5 + dates.indexOf(date)*2;
+          // A whole session a bit later beats chopping work into scraps that fit an early gap.
+          const chopped = (Math.min(left,want) - size)*3;
+          const score = (fallback ? 10000 : 0) + switching + chopped + used.get(date)*3 + Math.abs(a-ideal)/5 + horizon.indexOf(date)*2;
           candidates.push({s,score});
         }
       }
@@ -171,10 +186,13 @@ export function buildWeeklyPlan(input, now = new Date()) {
       s.reason = course?.difficulty === 3 ? 'מפגשים קצרים כדי להקל על נושא מאתגר' : w.energy === 'low' ? 'קצב עדין לפי האנרגיה שבחרת' : 'זמן נוח לפי ההעדפות ודרגת העומס שלך';
       sessions.push(s);reserve(s);left-=s.minutes;
     }
-    if (left > 0) unscheduled.push({...(g.legacy ? {} : {goalId:g.id}),taskId:g.legacy ? g.id : `goal:${g.id}`,title:g.title,minutes:left,reason:'היעד גדול מהזמן הזמין בקצב שבחרת. אפשר להפחית יעד, לשנות עומס או להעביר לשבוע הבא.'});
+    if (left > 0) unscheduled.push({...(g.legacy ? {} : {goalId:g.id}),taskId:g.legacy ? g.id : `goal:${g.id}`,title:g.title,minutes:left,reason:!g.legacy ? 'היעד גדול מהזמן הזמין בקצב שבחרת. אפשר להפחית יעד, לשנות עומס או להעביר לשבוע הבא.'
+      : g.deadline < today ? 'מועד ההגשה עבר. אפשר לעדכן אותו ולתכנן שוב.'
+      : g.deadline > horizon[horizon.length-1] ? 'השבוע הקרוב מלא. אפשר להרחיב את השעות הפנויות, או שנמצא לה זמן כשהשבוע יתפנה.'
+      : 'אין מספיק זמן פנוי עד מועד ההגשה. אפשר להרחיב את השעות הפנויות או לעדכן את המשימה.'});
   }
   sessions.sort((a,b)=>a.date.localeCompare(b.date)||a.start.localeCompare(b.start));
-  return {sessions,blockedSessions,retainedSessions:[...sessions,...blockedSessions],unscheduled,plannedMinutes:sessions.reduce((a,s)=>a+s.minutes,0),weekStart:start,weekEnd:end,needsReview:today>end};
+  return {sessions,blockedSessions,retainedSessions:[...sessions,...blockedSessions],unscheduled,plannedMinutes:sessions.reduce((a,s)=>a+s.minutes,0),weekStart:start,weekEnd:end,dates:shown,needsReview:today>end};
 }
 
 export function completeWeeklySession(state, sessionId, minutes) {
@@ -220,7 +238,12 @@ export function previewNextWeek(state, now = new Date(), options = {}) {
   const start = addDays(previous.weekStart,7) < weekStart(now) ? weekStart(now) : addDays(previous.weekStart,7);
   const carry = list(options.carryGoalIds);
   next.goals = next.goals.map(g => !g.repeatWeekly && carry.includes(g.id) ? {...g,weekStart:start,minutes:Math.max(0,g.minutes-previous.completions.filter(c=>c.goalId===g.id).reduce((a,c)=>a+c.minutes,0))} : g).filter(g=>g.minutes>0);
-  next.weekly = {...previous,nextWeek:undefined,weekStart:start,sessions:[],completions:[],overrides:[],
+  // Recurring goals the user pauses are skipped for the new week only; known busy days start empty.
+  const skipped = list(options.skipGoalIds).filter(id => next.goals.some(g => g.id === id && g.repeatWeekly));
+  const offDays = [...new Set(list(options.offDays))].filter(d => validDate(d) && d >= start && d <= addDays(start, 6));
+  next.weekly = {...previous,nextWeek:undefined,weekStart:start,sessions:[],completions:[],skippedGoalIds:skipped,
+    overrides:[...previous.overrides.filter(o => o.date >= start && o.date <= addDays(start, 6) && !offDays.includes(o.date)),
+      ...offDays.map(date => ({date,maxMinutes:0,energy:'normal',mode:'off'}))],
     load:choice(options.load,['light','balanced','heavy'],previous.load), energy:choice(options.energy,['low','normal','high'],previous.energy),
     reviews:[...previous.reviews,{weekStart:previous.weekStart,completedMinutes:previous.completions.reduce((a,c)=>a+c.minutes,0),note:clean(options.note,500)}].slice(-52)};
   const plan = buildWeeklyPlan(next, now);
@@ -242,6 +265,22 @@ export function acceptNextWeek(state, preview, now = new Date()) {
   if (!next.weekly.reviews.some(r=>r.weekStart===current.weekly.weekStart)) throw new RangeError('יש להכין תצוגה מקדימה חדשה');
   if (next.weekly.weekStart <= localDate(now)) return {...state,...next};
   return {...state,...current,weekly:{...current.weekly,reviews:next.weekly.reviews,nextWeek:next}};
+}
+
+// "Something changed" for one day, a few days or the rest of the week. Fixed commitments stay;
+// only flexible work on the affected days is released so the planner can place it again.
+const changeSettings = {off: {maxMinutes: 0, energy: 'normal'}, less: {maxMinutes: 60, energy: 'normal'},
+  tired: {maxMinutes: 720, energy: 'low'}, more: {maxMinutes: 720, energy: 'high'}};
+export function applyChange(state, dates, mode, now = new Date()) {
+  if (mode !== 'normal' && !changeModes.includes(mode)) throw new RangeError('נבחר מה השתנה.');
+  const today = localDate(now), next = {...state, ...normalizeWeekly(state, now)}, w = next.weekly;
+  const days = [...new Set(list(dates))].filter(d => validDate(d) && d >= today).sort();
+  if (!days.length || days.length > 14) throw new RangeError('נבחר ימים מהיום והלאה, עד שבועיים קדימה.');
+  w.overrides = [...w.overrides.filter(o => o.date >= today && !days.includes(o.date)),
+    ...(mode === 'normal' ? [] : days.map(date => ({date, ...changeSettings[mode], mode})))].sort((a, b) => a.date.localeCompare(b.date)).slice(0, 14);
+  w.sessions = w.sessions.filter(s => s.locked || !days.includes(s.date) || s.date < today
+    || (s.date === today && timeMinutes(s.start) < now.getHours()*60 + now.getMinutes()));
+  return next;
 }
 
 export function releaseFlexibleSessions(state, now = new Date()) {
