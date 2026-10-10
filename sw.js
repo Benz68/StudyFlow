@@ -1,4 +1,4 @@
-const CACHE = 'studyflow-weekly-v7';
+const CACHE = 'studyflow-weekly-v8';
 // Paths are relative to where the app is hosted (/ locally, /StudyFlow/ on GitHub Pages).
 const BASE = new URL('./', self.location).pathname;
 const SHELL = ['', 'index.html', 'manifest.json', 'src/studyflow/brand/mark.svg', 'src/studyflow/brand/app-icon-180.png', 'src/studyflow/brand/app-icon-192.png', 'src/studyflow/brand/app-icon-512.png', 'src/studyflow/bootstrap.mjs', 'src/studyflow/app.mjs', 'src/studyflow/styles.css', 'src/studyflow/depth.css', 'src/studyflow/motion.mjs', 'src/studyflow/forms.mjs', 'src/studyflow/views.mjs', 'src/studyflow/planner.mjs', 'src/studyflow/store.mjs', 'src/studyflow/tour.mjs', 'src/studyflow/datepicker.mjs', 'src/studyflow/weekly.mjs', 'src/studyflow/weekly-ui.mjs', 'src/studyflow/weekly.css', 'src/studyflow/weekly-wizard.mjs', 'src/studyflow/courses.mjs', 'src/studyflow/courses-ui.mjs'].map(path => BASE + path);
