@@ -11,7 +11,7 @@ export function addForm(today,deadline,tab='task') {
  <div class="form-tabs"><button data-form-tab="task" class="${tab==='task'?'active':''}">משימה שצריך לעשות</button><button data-form-tab="event" class="${tab==='event'?'active':''}">פעילות בשעה קבועה</button></div>
  <p class="form-kind-help">${tab==='task'?'תרגול, עבודה להגשה או סידור — נבחר יחד כמה זמן צריך, והמערכת תמצא מקום בשבוע.':'שיעור, משמרת או אימון — בוחרים מתי הם מתקיימים, והמערכת לא תשבץ שם משימות.'}</p>
  <form id="add-form" data-kind="${tab}">
- <label for="title">${tab==='task'?'מה תרצה לקדם?':'מה קורה?'}</label>
+ <label for="title">${tab==='task'?'מה צריך לעשות?':'מה קורה?'}</label>
  <input id="title" name="title" required maxlength="120" autocomplete="off" placeholder="${tab==='task'?'למשל, לתרגל למבחן בסטטיסטיקה':'לימודים, עבודה, אימון בשעה קבועה'}" autofocus>
  ${tab==='task'?taskFields(today,deadline):eventFields(today,weekday)}
  <p id="form-error" class="form-error" role="alert"></p>
@@ -20,22 +20,22 @@ export function addForm(today,deadline,tab='task') {
 }
 
 function taskFields(today,deadline) {
- return `<label for="minutes">כמה זמן בערך?</label><div class="duration-options">${[30,60,120].map(n=>`<button type="button" data-minutes="${n}" class="${n===60?'active':''}">${n===30?'חצי שעה':n===60?'שעה':'שעתיים'}</button>`).join('')}<input id="minutes" name="minutes" type="number" value="60" min="5" max="10080" step="5" required aria-label="זמן משוער בדקות"></div>
- <small class="field-help">בדקות. נפרק משימות גדולות למקטעים נוחים.</small>
- <label for="deadline">עד מתי?</label><input id="deadline" name="deadline" type="date" min="${today}" value="${deadline}" required>
- <small class="field-help">נמצא זמן פנוי עד סוף היום שנבחר.</small>
+ return `<label for="minutes">כמות זמן</label><div class="duration-options">${[30,60,120].map(n=>`<button type="button" data-minutes="${n}" class="${n===60?'active':''}">${n===30?'חצי שעה':n===60?'שעה':'שעתיים'}</button>`).join('')}<div class="minutes-box"><input id="minutes" name="minutes" type="number" value="60" min="5" max="10080" step="5" required aria-label="כמות זמן בדקות"><span aria-hidden="true">דקות</span></div></div>
+ <small class="field-help">בוחרים כפתור, או כותבים מספר דקות. מספיקה הערכה, לא צריך לדייק. משימה ארוכה תחולק לכמה חלקים.</small>
+ <label for="deadline">עד מתי צריך לסיים?</label><input id="deadline" name="deadline" type="hidden" data-picker data-quick min="${today}" value="${deadline}">
+ <small class="field-help">נמצא לזה זמן לפני התאריך הזה.</small>
  <details class="advanced"><summary>העדפה אישית ועוד אפשרויות</summary>
  <label for="preferredTime">מתי נוח לך לעשות את זה?</label><select id="preferredTime" name="preferredTime">${timeOptions('inherit',true)}</select>
  <div class="form-row"><div><label for="category">סוג המשימה</label><select id="category" name="category"><option value="study">לימודים</option><option value="personal">אישי</option><option value="work">עבודה</option></select></div><div><label for="priority">חשיבות</label><select id="priority" name="priority"><option value="normal">רגילה</option><option value="high">גבוהה</option><option value="low">כשיש זמן</option></select></div></div></details>`;
 }
 
 function eventFields(today,weekday) {
- return `<label for="date">תאריך התחלה</label><input id="date" name="date" type="date" value="${today}" min="${today}" required>
+ return `<label for="date">תאריך התחלה</label><input id="date" name="date" type="hidden" data-picker value="${today}" min="${today}">
  <div class="form-row"><div><label for="start">משעה</label><input id="start" name="start" type="time" value="10:00" required></div><div><label for="end">עד שעה</label><input id="end" name="end" type="time" value="11:00" required></div></div>
  <label for="repeatMode">זה חד־פעמי או חוזר בכל שבוע?</label><select id="repeatMode" name="repeatMode"><option value="once">פעם אחת בלבד</option><option value="weeks">בכל שבוע, למספר שבועות</option><option value="year">בכל שבוע, למשך שנה</option><option value="custom">בכל שבוע, עד תאריך שאבחר</option></select>
  <div id="repeat-fields" hidden><fieldset class="off-days"><legend>חוזר בכל שבוע בימים</legend>${dayOptions('weekdays',[weekday])}</fieldset>
  <div id="weeks-field" hidden><label for="weeksCount">כמה שבועות?</label><input id="weeksCount" name="weeksCount" type="number" value="4" min="1" max="52" step="1"></div>
- <div id="until-field" hidden><label for="repeatUntil">עד תאריך (כולל)</label><input id="repeatUntil" name="repeatUntil" type="date" min="${today}"></div></div>
+ <div id="until-field" hidden><label for="repeatUntil">עד תאריך (כולל)</label><input id="repeatUntil" name="repeatUntil" type="hidden" data-picker min="${today}"></div></div>
  <p id="repeat-summary" class="repeat-summary" aria-live="polite">הפעילות תופיע רק במועד שבחרת.</p>`;
 }
 

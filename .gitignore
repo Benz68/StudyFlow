@@ -16,3 +16,6 @@ desktop.ini
 # Build / temp
 dist/
 *.log
+
+# AI helper key (kept only on this computer)
+ai-key.txt

@@ -1,8 +1,11 @@
 import {buildPlan,localDate,weekDates,expandEvents,validDate,timeMinutes,eventsOverlap} from './planner.mjs';
 import {loadState,saveState,demoState,validateState} from './store.mjs';
-import {shell,renderMain,icon} from './views.mjs';
+import {shell,renderMain,icon,duration} from './views.mjs';
 import {addForm,settingsForm,proContent} from './forms.mjs';
 import {celebrateCompletion} from './motion.mjs';
+import {startTour} from './tour.mjs';
+import {enhanceDates} from './datepicker.mjs';
+import {helperForm,setupHelper} from './helper.mjs';
 
 let state=loadState(), plan, view='today', selected=localDate(), undoState=null;
 let realState=null, editing=null, returnFocus=null, toastTimer, storageFailed=false, addDrafts={};
@@ -32,7 +35,7 @@ function restoreFocus(saved){
 }
 function render(){
  const focused=main.contains(document.activeElement)?rememberFocus(document.activeElement):null;
- plan=buildPlan(state);
+ plan=buildPlan(state);main.classList.remove('fade');
  const dates=weekDates();if(!dates.includes(selected))selected=localDate();
  main.innerHTML=renderMain({state:{...state,eventSeries:state.events,events:expandEvents(state.events)},plan,view,selected,dates,today:localDate()});
  if(storageFailed)main.insertAdjacentHTML('afterbegin','<p class="storage-warning" role="alert">השמירה במכשיר אינה זמינה. כדאי להוריד גיבוי דרך ההעדפות לפני סגירת הדף.</p>');
@@ -42,6 +45,8 @@ function render(){
  });
  if(focused&&!sheet.open)restoreFocus(focused);
 }
+// Animate only on navigation, so saving a change doesn't make the page flicker.
+function fadeIn(){main.classList.remove('fade');void main.offsetWidth;main.classList.add('fade');}
 function toast(message,undo=false){
  clearTimeout(toastTimer); const el=document.querySelector('#toast');el.replaceChildren();
  const span=document.createElement('span');span.textContent=message;el.append(span);
@@ -54,7 +59,7 @@ function mutate(change,message){
 }
 function open(content){
  if(!sheet.open)returnFocus=rememberFocus(document.activeElement);
- sheet.innerHTML=content;
+ sheet.innerHTML=content;enhanceDates(sheet);
  const touchOpening=matchMedia('(pointer: coarse)').matches&&document.documentElement.dataset.inputModality!=='keyboard';
  const heading=sheet.querySelector('#dialog-title');
  if(touchOpening){sheet.querySelectorAll('[autofocus]').forEach(el=>el.removeAttribute('autofocus'));if(heading){heading.tabIndex=-1;heading.setAttribute('autofocus','');}}
@@ -85,6 +90,7 @@ function showAdd(tab='task',switching=false){
  }else if(title)form.elements.title.value=title;
  if(tab==='event')updateRepeat();
  else form.querySelectorAll('[data-minutes]').forEach(el=>el.classList.toggle('active',el.dataset.minutes===form.elements.minutes.value));
+ enhanceDates(form);
  if(switching)sheet.querySelector(`[data-form-tab="${tab}"]`)?.focus({preventScroll:true});
 }
 function editTask(id){
@@ -94,7 +100,10 @@ function editTask(id){
  sheet.querySelector('.form-tabs').hidden=true;
  const form=sheet.querySelector('form');for(const key of ['title','minutes','deadline','priority','category','preferredTime'])form.elements[key].value=task[key]||(key==='preferredTime'?'inherit':'');
  form.querySelector('.submit-button').textContent='לשמור ולעדכן את התוכנית';
+ enhanceDates(form);syncDuration();
 }
+function syncDuration(){const box=sheet.querySelector('[name=minutes]');if(box)sheet.querySelectorAll('[data-minutes]').forEach(b=>b.classList.toggle('active',b.dataset.minutes===box.value));}
+document.addEventListener('input',event=>{if(event.target.name==='minutes')syncDuration();});
 function recurrenceEnd(date,mode,weeks=4){
  const end=new Date(`${date}T12:00:00`);
  if(mode==='weeks')end.setDate(end.getDate()+Number(weeks)*7-1);
@@ -112,6 +121,7 @@ function updateRepeat(){
  if(validDate(date)){
   form.elements.repeatUntil.min=date;
   if(!form.elements.repeatUntil.value)form.elements.repeatUntil.value=recurrenceEnd(date,'year');
+  enhanceDates(form);
   const until=mode==='custom'?form.elements.repeatUntil.value:recurrenceEnd(date,mode,form.elements.weeksCount.value);
   const labels=['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
   const weekdays=[...form.querySelectorAll('[name=weekdays]:checked')].map(el=>Number(el.value));
@@ -146,6 +156,49 @@ function editEvent(id){
  }
  updateRepeat();
 }
+// The AI helper's items come back loosely filled; turn each into a task or fixed event the planner accepts,
+// and explain anything that can't be added as-is.
+const pad2=n=>String(n).padStart(2,'0');
+const dayName=date=>new Date(`${date}T12:00:00`).toLocaleDateString('he-IL',{weekday:'long',day:'numeric',month:'long'});
+function helperItem(item,taken){
+ const today=localDate(),title=String(item.title||'').trim().slice(0,120);
+ const date=validDate(item.date)?item.date:'',time=timeMinutes(item.time)!==null?item.time:'';
+ if(item.kind==='event'){
+  if(!date)return {problem:'לא ברור באיזה יום. אפשר להוסיף ידנית.',label:'שעה קבועה'};
+  if(timeMinutes(item.start)===null)return {problem:'לא ברור באיזו שעה. אפשר להוסיף ידנית.',label:`שעה קבועה · ${dayName(date)}`};
+  let end=timeMinutes(item.end)!==null&&item.end>item.start?item.end:'';
+  if(!end){const m=Math.min(timeMinutes(item.start)+60,23*60+59);end=`${pad2(Math.floor(m/60))}:${pad2(m%60)}`;}
+  const event={id:crypto.randomUUID(),title,date,start:item.start,end};
+  if(item.weekly)Object.assign(event,{repeat:'weekly',weekdays:[new Date(`${date}T12:00:00`).getDay()],repeatUntil:recurrenceEnd(date,'year'),excludedDates:[]});
+  const label=`שעה קבועה · ${dayName(date)} · ${item.start}–${end}${item.weekly?' · כל שבוע':''}`;
+  if(date<today)return {problem:'התאריך הזה כבר עבר.',label};
+  const clash=[...state.events,...taken].find(e=>eventsOverlap(e,event));
+  if(clash)return {problem:`חופף ל״${clash.title}״.`,label};
+  return {label,data:{kind:'event',event}};
+ }
+ const minutes=Math.min(Math.max(Number(item.minutes)||60,5),10080);
+ let deadline=[item.deadline,date].filter(validDate).sort().pop()||weekDates()[6];
+ if(deadline<today)deadline=today;
+ const task={id:crypto.randomUUID(),title,minutes,deadline,priority:'normal',category:['study','personal','work'].includes(item.category)?item.category:'study',preferredTime:'inherit',done:false,completedMinutes:0};
+ if(date&&date>=today){const start=new Date(`${date}T${time||'00:00'}`);if(start>new Date())task.notBefore=start.toISOString();}
+ const label=`משימה · ${duration(minutes)} · ${date?dayName(date)+(time?` ב־${time}`:''):'עד '+dayName(deadline)}`;
+ if(date&&date<today)return {problem:'היום הזה כבר עבר. נשבץ עד סוף השבוע אם מסמנים.',label,data:{kind:'task',task}};
+ return {label,data:{kind:'task',task}};
+}
+function showHelper(){
+ open(helperForm());
+ const taken=[];
+ setupHelper(sheet,{
+  today:localDate(),
+  weekday:new Date().toLocaleDateString('en-US',{weekday:'long'}),
+  describe:item=>{const result=helperItem(item,taken);if(result.data?.kind==='event'&&!result.problem)taken.push(result.data.event);return result;},
+  add:chosen=>{
+   const usable=chosen.filter(item=>item.data);
+   mutate(()=>{for(const {data,title} of usable){const name=title.trim().slice(0,120);if(data.kind==='task')state.tasks.push({...data.task,title:name});else state.events.push({...data.event,title:name});}},usable.length===1?'נוסף לתוכנית.':`נוספו ${usable.length} פריטים לתוכנית.`);
+   close();
+  }
+ });
+}
 function stopSeries(id){
  const item=state.events.find(e=>e.id===id&&e.repeat==='weekly');if(!item)return;
  open(`<div class="sheet-top"><h2 id="dialog-title">להפסיק מהיום?</h2><button class="icon-button" data-action="close" aria-label="סגירה">${icon('close')}</button></div><p>הפעילות לא תופיע מהיום והלאה. המועדים שכבר עברו יישמרו, והזמן שהתפנה יהיה זמין למשימות.</p><button class="primary submit-button" data-action="confirm-stop-series">כן, להפסיק מהיום</button><button class="text-button" data-action="cancel-stop-series">לחזור לעריכה</button>`);
@@ -160,7 +213,7 @@ function removeEvent(id,date){
 document.addEventListener('click',event=>{
  const target=event.target.closest('button,a.brand');if(!target)return;
  if(target.matches('a.brand')){event.preventDefault();view='today';selected=localDate();render();return;}
- if(target.dataset.view){view=target.dataset.view;if(view==='today')selected=localDate();render();main.focus();return;}
+ if(target.dataset.view){view=target.dataset.view;if(view==='today')selected=localDate();render();fadeIn();main.focus();return;}
  if(target.dataset.date&&!target.dataset.action){selected=target.dataset.date;if(view==='week')view='today';render();return;}
  if(target.dataset.formTab){showAdd(target.dataset.formTab,true);return;}
  if(target.dataset.minutes){sheet.querySelector('[name=minutes]').value=target.dataset.minutes;sheet.querySelectorAll('[data-minutes]').forEach(b=>b.classList.toggle('active',b===target));return;}
@@ -169,6 +222,8 @@ document.addEventListener('click',event=>{
   case 'add':showAdd();break;
   case 'close':close();break;
   case 'settings':open(settingsForm(state.preferences));break;
+  case 'helper':showHelper();break;
+  case 'tour':if(sheet.open)close();view='today';selected=localDate();render();startTour();break;
   case 'pro':open(proContent());break;
   case 'edit-task':editTask(id);break;
   case 'edit-event':editEvent(id);break;
@@ -178,7 +233,9 @@ document.addEventListener('click',event=>{
    const stopId=sheet.dataset.stopId,today=localDate(),yesterday=new Date(`${today}T12:00:00`);yesterday.setDate(yesterday.getDate()-1);
    mutate(()=>{state.events=state.events.flatMap(item=>item.id!==stopId?[item]:item.date>=today?[]:[{...item,repeatUntil:item.repeatUntil&&item.repeatUntil<today?item.repeatUntil:localDate(yesterday)}]);},'הפעילות הופסקה מהיום. התוכנית עודכנה.');close();break;
   }
-  case 'demo':if(!state.tasks.length&&!state.events.length){realState=clone(state);state={...demoState(),demo:true};undoState=null;render();}break;
+  case 'demo':if(!state.tasks.length&&!state.events.length){realState=clone(state);state={...demoState(),demo:true};undoState=null;render();
+   // Late in the day today can be empty, so open the sample on the first day that has something in it.
+   const busy=weekDates().find(date=>plan.sessions.some(s=>s.date===date));if(busy&&busy!==selected){selected=busy;render();}}break;
   case 'exit-demo':if(realState){state=realState;realState=null;undoState=null;selected=localDate();render();toast('המרחב שלך מוכן. מתחילים במשימה אחת.');}break;
   case 'replan':render();toast(plan.unscheduled.length?'עדכנו את התוכנית. כמה משימות עדיין צריכות מקום.':'התוכנית מעודכנת לפי הזמן הפנוי שלך.');break;
   case 'complete-session':{
@@ -263,4 +320,6 @@ document.addEventListener('change',async event=>{
  }catch{toast('לא הצלחנו לקרוא את הגיבוי. יש לבחור קובץ גיבוי תקין של StudyFlow.');}
 });
 render();
+// The AI helper needs the local server; on a plain web host (GitHub Pages) its buttons are hidden.
+fetch('api/assistant').then(r=>r.ok?r.json():null).catch(()=>null).then(info=>{if(!info?.available)document.body.classList.add('no-helper');});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!sheet.open)render();});
