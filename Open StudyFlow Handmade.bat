@@ -13,18 +13,6 @@ if errorlevel 1 (
   exit /b
 )
 
-if not exist "node_modules\@anthropic-ai\sdk" (
-  echo.
-  echo  First time only: installing the AI helper part. This takes about a minute...
-  call npm install --no-audit --no-fund
-)
-
-if not exist "ai-key.txt" if not defined ANTHROPIC_API_KEY (
-  echo.
-  echo  Note: the AI helper is not connected yet ^(no ai-key.txt^). Everything else works.
-  echo  See HOW TO USE, section "The AI helper", to connect it.
-)
-
 echo.
 echo  StudyFlow is starting...
 echo  Your browser will open in a moment at http://127.0.0.1:4174
@@ -37,7 +25,7 @@ start "" /min powershell -NoProfile -WindowStyle Hidden -Command "Start-Sleep 2;
 node scripts\serve.mjs
 
 echo.
-echo  If you see "address already in use" above, StudyFlow is ALREADY running.
-echo  Just use the browser tab that opened - everything is fine.
+echo  If you see "address already in use" above, another StudyFlow server is using this address.
+echo  Close that server and open this file again to use this folder.
 echo.
 pause
