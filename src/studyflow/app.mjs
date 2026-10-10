@@ -16,6 +16,25 @@ app.innerHTML=shell();document.body.classList.add('no-helper');
 const sheet=document.querySelector('#sheet');
 const main=document.querySelector('#main');
 const clone=value=>JSON.parse(JSON.stringify(value));
+document.documentElement.dataset.inputModality='pointer';
+document.addEventListener('keydown',event=>{
+ if(!event.metaKey&&!event.ctrlKey&&!event.altKey)document.documentElement.dataset.inputModality='keyboard';
+ if(event.key==='Escape'&&sheet.open){event.preventDefault();close();}
+},true);
+document.addEventListener('pointerdown',()=>{document.documentElement.dataset.inputModality='pointer';},true);
+const focusAttributes=['data-action','data-id','data-date','data-view'];
+function rememberFocus(element){
+ if(!element)return null;
+ const attributes=focusAttributes.filter(name=>element.hasAttribute(name)).map(name=>[name,element.getAttribute(name)]);
+ return {element,attributes,index:element.dataset.action?[...main.querySelectorAll('[data-action]')].filter(el=>el.dataset.action===element.dataset.action).indexOf(element):-1};
+}
+function restoreFocus(saved){
+ if(!saved)return;
+ let target=saved.element.isConnected?saved.element:null;
+ if(!target&&saved.attributes.length)target=[...main.querySelectorAll('button,a')].find(el=>saved.attributes.every(([name,value])=>el.getAttribute(name)===value));
+ if(!target&&saved.index>=0){const action=saved.attributes.find(([name])=>name==='data-action')?.[1],peers=[...main.querySelectorAll('[data-action]')].filter(el=>el.dataset.action===action);target=peers[Math.min(saved.index,peers.length-1)];}
+ (target||main).focus({preventScroll:true});
+}
 function render(){
  state={...state,...normalizeWeekly(state)};plan=buildWeeklyPlan(state);state.weekly.sessions=plan.retainedSessions;main.classList.remove('fade');
  const dates=weekDates(new Date(plan.weekStart+'T12:00:00'));if(!dates.includes(selected))selected=dates.includes(localDate())?localDate():dates[0];
@@ -25,6 +44,7 @@ function render(){
   const active=el.dataset.view===view;el.classList.toggle('active',active);
   if(active)el.setAttribute('aria-current','page');else el.removeAttribute('aria-current');
  });
+ if(focused&&!sheet.open)restoreFocus(focused);
 }
 // Animate only on navigation, so saving a change doesn't make the page flicker.
 function fadeIn(){main.classList.remove('fade');void main.offsetWidth;main.classList.add('fade');}
@@ -40,9 +60,24 @@ function mutate(change,message,keepNextWeek=false){
  state={...state,...normalizeWeekly(state)};state.weekly.sessions=buildWeeklyPlan(state).retainedSessions;const saved=state.demo||saveState(state);storageFailed=!saved;render();
  toast(saved?(typeof message==='function'?message():message):'השינוי מוצג, אבל לא נשמר במכשיר. אפשר להוריד גיבוי דרך ההעדפות.',true);
 }
-function open(content){returnFocus=document.activeElement;sheet.innerHTML=content;enhanceDates(sheet);if(!sheet.open)sheet.showModal();document.body.classList.add('dialog-open');setTimeout(()=>sheet.querySelector('[autofocus],input,button')?.focus(),0);}
-function close(){sheet.close();}
-sheet.addEventListener('close',()=>{document.body.classList.remove('dialog-open');editing=null;if(returnFocus?.isConnected)returnFocus.focus();else main.focus();});
+function open(content){
+ if(!sheet.open)returnFocus=rememberFocus(document.activeElement);
+ sheet.innerHTML=content;enhanceDates(sheet);
+ const touchOpening=matchMedia('(pointer: coarse)').matches&&document.documentElement.dataset.inputModality!=='keyboard';
+ const heading=sheet.querySelector('#dialog-title');
+ if(touchOpening){sheet.querySelectorAll('[autofocus]').forEach(el=>el.removeAttribute('autofocus'));if(heading){heading.tabIndex=-1;heading.setAttribute('autofocus','');}}
+ if(!sheet.open)sheet.showModal();
+ document.body.classList.add('dialog-open');
+ (touchOpening?heading:sheet.querySelector('[autofocus],input,button'))?.focus({preventScroll:true});
+}
+function finishClose(){
+ if(sheet.open)return;
+ document.body.classList.remove('dialog-open');editing=null;addDrafts={};
+ const saved=returnFocus;returnFocus=null;restoreFocus(saved);
+}
+function close(){sheet.close();finishClose();}
+sheet.addEventListener('cancel',event=>{event.preventDefault();close();});
+sheet.addEventListener('close',finishClose);
 sheet.addEventListener('click',event=>{if(event.target===sheet){const r=sheet.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)close();}});
 let formDrafts={};
 function showAdd(tab='task',keep=false){if(!keep)formDrafts={};editing=null;open(addForm(localDate(),weekDates()[6],tab));const f=sheet.querySelector('form');for(const [key,value] of Object.entries(formDrafts[tab]||{})){const els=[...f.elements].filter(el=>el.name===key);els.forEach(el=>{if(el.type==='checkbox')el.checked=value.includes(el.value);else el.value=value[0];});}if(tab==='event')updateRepeat();enhanceDates(f);}

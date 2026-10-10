@@ -80,6 +80,23 @@ try{
  assert.equal(await page.locator('.completion-burst').count(),9);
  await page.clock.runFor(800);
  assert.equal(await page.locator('.completion-burst').count(),0,'Completion particles clean themselves up');
+ await page.locator('[data-action=add]:visible').first().click();
+ await page.locator('#title').fill('טיוטה שלא הולכת לאיבוד');
+ await page.locator('#minutes').fill('90');
+ await page.locator('[data-form-tab=event]').click();
+ await page.locator('#repeatMode').selectOption('weeks');
+ await page.locator('#weeksCount').fill('8');
+ await page.locator('[data-form-tab=task]').click();
+ assert.equal(await page.locator('#title').inputValue(),'טיוטה שלא הולכת לאיבוד');
+ assert.equal(await page.locator('#minutes').inputValue(),'90');
+ await page.locator('[data-form-tab=event]').click();
+ assert.equal(await page.locator('#weeksCount').inputValue(),'8');
+ assert.equal(await page.locator('#title').evaluate(el=>getComputedStyle(el).fontSize),'16px');
+ await page.keyboard.press('Escape');
+ const day=page.locator('.day-chip').first();
+ await day.focus();await page.keyboard.press('Enter');
+ assert.equal(await day.evaluate(el=>el===document.activeElement),true,'Keyboard navigation retains focus after rerender');
+ assert.equal(await page.locator('.sculpture-body').evaluate(el=>getComputedStyle(el).animationName),'none','Keyboard actions do not animate');
  assert.deepEqual(errors,[]);
  console.log('Year/weeks, selected weekdays, single occurrence, series editing/removal/undo, strict evening preference and reload passed.');
 }finally{await browser.close();}
