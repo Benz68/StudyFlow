@@ -5,19 +5,21 @@ import {addForm,settingsForm,proContent} from './forms.mjs';
 import {celebrateCompletion} from './motion.mjs';
 import {startTour} from './tour.mjs';
 import {enhanceDates} from './datepicker.mjs';
-import {helperForm,setupHelper} from './helper.mjs';
+import {buildWeeklyPlan,normalizeWeekly} from './weekly.mjs';
+import {renderCourses,setupCoursesUI} from './courses-ui.mjs';
+import {weeklyPanel,setupWeeklyUI} from './weekly-ui.mjs';
 
 let state=loadState(), plan, view='today', selected=localDate(), undoState=null;
-let realState=null, editing=null, returnFocus=null, toastTimer, storageFailed=false;
+let realState=null, editing=null, returnFocus=null, toastTimer, storageFailed=false, pendingImport=null;
 const app=document.querySelector('#app');
-app.innerHTML=shell();
+app.innerHTML=shell();document.body.classList.add('no-helper');
 const sheet=document.querySelector('#sheet');
 const main=document.querySelector('#main');
 const clone=value=>JSON.parse(JSON.stringify(value));
 function render(){
- plan=buildPlan(state);main.classList.remove('fade');
- const dates=weekDates();if(!dates.includes(selected))selected=localDate();
- main.innerHTML=renderMain({state:{...state,eventSeries:state.events,events:expandEvents(state.events)},plan,view,selected,dates,today:localDate()});
+ state={...state,...normalizeWeekly(state)};plan=buildWeeklyPlan(state);state.weekly.sessions=plan.retainedSessions;main.classList.remove('fade');
+ const dates=weekDates(new Date(plan.weekStart+'T12:00:00'));if(!dates.includes(selected))selected=dates.includes(localDate())?localDate():dates[0];
+ main.innerHTML=view==='courses'?renderCourses(state):weeklyPanel(state,plan,view)+renderMain({state:{...state,eventSeries:state.events,events:expandEvents(state.events,new Date(plan.weekStart+'T12:00:00'))},plan,view,selected,dates,today:localDate()});
  if(storageFailed)main.insertAdjacentHTML('afterbegin','<p class="storage-warning" role="alert">השמירה במכשיר אינה זמינה. כדאי להוריד גיבוי דרך ההעדפות לפני סגירת הדף.</p>');
  document.querySelectorAll('[data-view]').forEach(el=>{
   const active=el.dataset.view===view;el.classList.toggle('active',active);
@@ -32,15 +34,19 @@ function toast(message,undo=false){
  if(undo){const button=document.createElement('button');button.textContent='ביטול';button.dataset.action='undo';el.append(button);}
  el.classList.add('visible');toastTimer=setTimeout(()=>el.classList.remove('visible'),7000);
 }
-function mutate(change,message){
- undoState=clone(state);change();const saved=state.demo||saveState(state);storageFailed=!saved;render();
+function mutate(change,message,keepNextWeek=false){
+ undoState=clone(state);change();
+ if(state.weekly.nextWeek&&!keepNextWeek)state.weekly.nextWeek.courses=clone(state.courses);
+ state={...state,...normalizeWeekly(state)};state.weekly.sessions=buildWeeklyPlan(state).retainedSessions;const saved=state.demo||saveState(state);storageFailed=!saved;render();
  toast(saved?(typeof message==='function'?message():message):'השינוי מוצג, אבל לא נשמר במכשיר. אפשר להוריד גיבוי דרך ההעדפות.',true);
 }
 function open(content){returnFocus=document.activeElement;sheet.innerHTML=content;enhanceDates(sheet);if(!sheet.open)sheet.showModal();document.body.classList.add('dialog-open');setTimeout(()=>sheet.querySelector('[autofocus],input,button')?.focus(),0);}
 function close(){sheet.close();}
 sheet.addEventListener('close',()=>{document.body.classList.remove('dialog-open');editing=null;if(returnFocus?.isConnected)returnFocus.focus();else main.focus();});
 sheet.addEventListener('click',event=>{if(event.target===sheet){const r=sheet.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)close();}});
-function showAdd(tab='task'){editing=null;open(addForm(localDate(),weekDates()[6],tab));if(tab==='event')updateRepeat();}
+let formDrafts={};
+function showAdd(tab='task',keep=false){if(!keep)formDrafts={};editing=null;open(addForm(localDate(),weekDates()[6],tab));const f=sheet.querySelector('form');for(const [key,value] of Object.entries(formDrafts[tab]||{})){const els=[...f.elements].filter(el=>el.name===key);els.forEach(el=>{if(el.type==='checkbox')el.checked=value.includes(el.value);else el.value=value[0];});}if(tab==='event')updateRepeat();enhanceDates(f);}
+function switchAdd(tab){const f=sheet.querySelector('#add-form');if(f){const fd=new FormData(f);formDrafts[f.dataset.kind]=Object.fromEntries([...new Set(fd.keys())].map(k=>[k,fd.getAll(k)]));}showAdd(tab,true);}
 function editTask(id){
  const task=state.tasks.find(t=>t.id===id);if(!task)return;
  open(addForm(localDate(),task.deadline));editing=id;
@@ -92,7 +98,7 @@ function editEvent(id){
  open(addForm(localDate(),weekDates()[6],'event'));editing=id;
  sheet.querySelector('#dialog-title').textContent=item.repeat==='weekly'?'נעדכן את הפעילות החוזרת':'נעדכן את הפעילות';
  sheet.querySelector('.form-tabs').hidden=true;
- const form=sheet.querySelector('form');for(const key of ['title','date','start','end'])form.elements[key].value=item[key];
+ const form=sheet.querySelector('form');for(const key of ['title','date','start','end','travelBefore','travelAfter'])form.elements[key].value=item[key]||0;
  form.elements.date.min=item.date<localDate()?item.date:localDate();
  form.elements.repeatMode.value=item.repeat==='weekly'?'custom':'once';
  form.elements.repeatUntil.value=item.repeatUntil||recurrenceEnd(item.date,'year');
@@ -103,49 +109,6 @@ function editEvent(id){
   const stop=document.createElement('button');stop.type='button';stop.className='text-button stop-series-button';stop.dataset.action='stop-series';stop.dataset.id=id;stop.textContent='להפסיק את הפעילות מהיום';form.append(stop);
  }
  updateRepeat();
-}
-// The AI helper's items come back loosely filled; turn each into a task or fixed event the planner accepts,
-// and explain anything that can't be added as-is.
-const pad2=n=>String(n).padStart(2,'0');
-const dayName=date=>new Date(`${date}T12:00:00`).toLocaleDateString('he-IL',{weekday:'long',day:'numeric',month:'long'});
-function helperItem(item,taken){
- const today=localDate(),title=String(item.title||'').trim().slice(0,120);
- const date=validDate(item.date)?item.date:'',time=timeMinutes(item.time)!==null?item.time:'';
- if(item.kind==='event'){
-  if(!date)return {problem:'לא ברור באיזה יום. אפשר להוסיף ידנית.',label:'שעה קבועה'};
-  if(timeMinutes(item.start)===null)return {problem:'לא ברור באיזו שעה. אפשר להוסיף ידנית.',label:`שעה קבועה · ${dayName(date)}`};
-  let end=timeMinutes(item.end)!==null&&item.end>item.start?item.end:'';
-  if(!end){const m=Math.min(timeMinutes(item.start)+60,23*60+59);end=`${pad2(Math.floor(m/60))}:${pad2(m%60)}`;}
-  const event={id:crypto.randomUUID(),title,date,start:item.start,end};
-  if(item.weekly)Object.assign(event,{repeat:'weekly',weekdays:[new Date(`${date}T12:00:00`).getDay()],repeatUntil:recurrenceEnd(date,'year'),excludedDates:[]});
-  const label=`שעה קבועה · ${dayName(date)} · ${item.start}–${end}${item.weekly?' · כל שבוע':''}`;
-  if(date<today)return {problem:'התאריך הזה כבר עבר.',label};
-  const clash=[...state.events,...taken].find(e=>eventsOverlap(e,event));
-  if(clash)return {problem:`חופף ל״${clash.title}״.`,label};
-  return {label,data:{kind:'event',event}};
- }
- const minutes=Math.min(Math.max(Number(item.minutes)||60,5),10080);
- let deadline=[item.deadline,date].filter(validDate).sort().pop()||weekDates()[6];
- if(deadline<today)deadline=today;
- const task={id:crypto.randomUUID(),title,minutes,deadline,priority:'normal',category:['study','personal','work'].includes(item.category)?item.category:'study',preferredTime:'inherit',done:false,completedMinutes:0};
- if(date&&date>=today){const start=new Date(`${date}T${time||'00:00'}`);if(start>new Date())task.notBefore=start.toISOString();}
- const label=`משימה · ${duration(minutes)} · ${date?dayName(date)+(time?` ב־${time}`:''):'עד '+dayName(deadline)}`;
- if(date&&date<today)return {problem:'היום הזה כבר עבר. נשבץ עד סוף השבוע אם מסמנים.',label,data:{kind:'task',task}};
- return {label,data:{kind:'task',task}};
-}
-function showHelper(){
- open(helperForm());
- const taken=[];
- setupHelper(sheet,{
-  today:localDate(),
-  weekday:new Date().toLocaleDateString('en-US',{weekday:'long'}),
-  describe:item=>{const result=helperItem(item,taken);if(result.data?.kind==='event'&&!result.problem)taken.push(result.data.event);return result;},
-  add:chosen=>{
-   const usable=chosen.filter(item=>item.data);
-   mutate(()=>{for(const {data,title} of usable){const name=title.trim().slice(0,120);if(data.kind==='task')state.tasks.push({...data.task,title:name});else state.events.push({...data.event,title:name});}},usable.length===1?'נוסף לתוכנית.':`נוספו ${usable.length} פריטים לתוכנית.`);
-   close();
-  }
- });
 }
 function stopSeries(id){
  const item=state.events.find(e=>e.id===id&&e.repeat==='weekly');if(!item)return;
@@ -163,14 +126,15 @@ document.addEventListener('click',event=>{
  if(target.matches('a.brand')){event.preventDefault();view='today';selected=localDate();render();return;}
  if(target.dataset.view){view=target.dataset.view;if(view==='today')selected=localDate();render();fadeIn();main.focus();return;}
  if(target.dataset.date&&!target.dataset.action){selected=target.dataset.date;if(view==='week')view='today';render();fadeIn();return;}
- if(target.dataset.formTab){showAdd(target.dataset.formTab);return;}
+ if(target.dataset.formTab){switchAdd(target.dataset.formTab);return;}
  if(target.dataset.minutes){sheet.querySelector('[name=minutes]').value=target.dataset.minutes;syncDuration();return;}
  const id=target.dataset.id;
  switch(target.dataset.action){
   case 'add':showAdd();break;
   case 'close':close();break;
   case 'settings':open(settingsForm(state.preferences));break;
-  case 'helper':showHelper();break;
+  case 'restore-backup':if(pendingImport){mutate(()=>{state=pendingImport;},'הגיבוי שוחזר, כולל המטרות וההתקדמות.',true);pendingImport=null;close();}break;
+
   case 'tour':if(sheet.open)close();view='today';selected=localDate();render();startTour();break;
   case 'pro':open(proContent());break;
   case 'edit-task':editTask(id);break;
@@ -187,11 +151,11 @@ document.addEventListener('click',event=>{
   case 'exit-demo':if(realState){state=realState;realState=null;undoState=null;selected=localDate();render();toast('המרחב שלך מוכן. מתחילים במשימה אחת.');}break;
   case 'replan':render();toast(plan.unscheduled.length?'עדכנו את התוכנית. כמה משימות עדיין צריכות מקום.':'התוכנית מעודכנת לפי הזמן הפנוי שלך.');break;
   case 'complete-session':{
-   const session=plan.sessions.find(s=>s.id===id);if(!session)return;
+   const session=plan.sessions.find(s=>s.id===id);if(!session||session.goalId)return;
    celebrateCompletion(target);
-   mutate(()=>{const t=state.tasks.find(t=>t.id===session.taskId);t.completedMinutes=Math.min(t.minutes,(t.completedMinutes||0)+session.minutes);t.completionLog=[...(t.completionLog||[]),{date:localDate(),minutes:session.minutes}];t.done=t.completedMinutes>=t.minutes;},'עוד צעד מאחוריך. כל הכבוד!');break;
+   mutate(()=>{state.weekly.sessions=state.weekly.sessions.filter(s=>s.id!==id);const t=state.tasks.find(t=>t.id===session.taskId);t.completedMinutes=Math.min(t.minutes,(t.completedMinutes||0)+session.minutes);t.completionLog=[...(t.completionLog||[]),{date:localDate(),minutes:session.minutes}];t.done=t.completedMinutes>=t.minutes;},'עוד צעד מאחוריך. כל הכבוד!');break;
   }
-  case 'delay':{const session=plan.sessions.find(s=>s.id===id);if(!session)break;mutate(()=>{const t=state.tasks.find(t=>t.id===session.taskId);const later=new Date(Math.max(Date.now(),new Date(`${session.date}T${session.start}`).getTime())+60*60*1000);t.notBefore=later.toISOString();},()=>plan.unscheduled.some(t=>t.taskId===session.taskId)?'דחינו בשעה. חלק מהמשימה לא נכנס לפני היעד — אפשר לעדכן אותו.':'דחינו את המשימה בשעה והתוכנית עודכנה.');break;}
+  case 'delay':{const session=plan.sessions.find(s=>s.id===id);if(!session||session.goalId)break;mutate(()=>{const t=state.tasks.find(t=>t.id===session.taskId);const later=new Date(Math.max(Date.now(),new Date(`${session.date}T${session.start}`).getTime())+60*60*1000);t.notBefore=later.toISOString();},()=>plan.unscheduled.some(t=>t.taskId===session.taskId)?'דחינו בשעה. חלק מהמשימה לא נכנס לפני היעד — אפשר לעדכן אותו.':'דחינו את המשימה בשעה והתוכנית עודכנה.');break;}
   case 'toggle-task':mutate(()=>{const t=state.tasks.find(t=>t.id===id);t.done=!t.done;t.completedMinutes=t.done?t.minutes:0;if(!t.done)t.completionLog=[];},'המשימה עודכנה והתוכנית הותאמה.');break;
   case 'delete-task':mutate(()=>{state.tasks=state.tasks.filter(t=>t.id!==id);},'המשימה הוסרה.');break;
   case 'delete-event':removeEvent(id,target.dataset.date);break;
@@ -214,7 +178,7 @@ document.addEventListener('submit',event=>{
   p.scheduleStyle=fd.get('scheduleStyle');p.allowOutsidePreferred=fd.has('allowOutsidePreferred');
   if(Object.values(p).slice(0,5).some(n=>!Number.isFinite(n))||p.startHour<0||p.startHour>22||p.startHour>=p.endHour||p.endHour>23)return error('שעת הסיום צריכה להיות אחרי שעת ההתחלה, ולכל המאוחר 23.');
   if(p.excludedDays.length===7)return error('כדי לתכנן, צריך להשאיר לפחות יום אחד פנוי למשימות.');
-  mutate(()=>{state.preferences=p;},'הקצב עודכן. התוכנית הותאמה אליך.');close();return;
+  mutate(()=>{state.preferences=p;state.weekly.sessions=state.weekly.sessions.filter(s=>s.locked||s.date<localDate()||(s.date===localDate()&&s.start<new Date().toTimeString().slice(0,5)));},'הקצב עודכן. התוכנית הותאמה אליך.');close();return;
  }
  const title=String(fd.get('title')||'').trim();if(!title||title.length>120)return error('נבחר שם קצר, עד 120 תווים.');
  if(form.dataset.kind==='task'){
@@ -228,8 +192,8 @@ document.addEventListener('submit',event=>{
   const start=String(fd.get('start')),end=String(fd.get('end')),date=String(fd.get('date'));
   const old=editing?state.events.find(e=>e.id===editing):null;
   if(!validDate(date)||(date<localDate()&&date!==old?.date))return error('נבחר תאריך תקין מהיום והלאה.');
-  if(timeMinutes(start)===null||timeMinutes(end)===null||start>=end)return error('שעת הסיום צריכה להיות אחרי שעת ההתחלה.');
-  const item={id:editing||crypto.randomUUID(),title,date,start,end};
+  if(timeMinutes(start)===null||timeMinutes(end)===null||start===end)return error('שעות ההתחלה והסיום צריכות להיות שונות.');
+  const item={id:editing||crypto.randomUUID(),title,date,start,end,overnight:end<start,travelBefore:Number(fd.get('travelBefore')||0),travelAfter:Number(fd.get('travelAfter')||0)};
   const mode=String(fd.get('repeatMode'));
   if(!['once','weeks','year','custom'].includes(mode))return error('נבחר משך תקין להתחייבות.');
   if(mode!=='once'){
@@ -261,13 +225,18 @@ document.addEventListener('change',async event=>{
  try{
   const raw=JSON.parse(await file.text());if(!Array.isArray(raw.tasks)||!Array.isArray(raw.events))throw new Error('shape');
   const imported=validateState(raw);if(imported.tasks.length!==raw.tasks.length||imported.events.length!==raw.events.length)throw new Error('items');
+  if(raw.weekly&&Array.isArray(raw.goals)&&Array.isArray(raw.courses)){
+   pendingImport=imported;
+   open(`<div class="sheet-top"><h2 id="dialog-title">לשחזר את הגיבוי?</h2><button class="icon-button" data-action="close" aria-label="סגירה">${icon('close')}</button></div><p>הגיבוי כולל ${imported.goals.length} מטרות ו־${imported.courses.length} מקצועות, יחד עם התוכנית וההתקדמות. השחזור יחליף את הנתונים במכשיר הזה. אפשר לבטל מיד לאחר השחזור.</p><button class="primary submit-button" data-action="restore-backup">לשחזר את הגיבוי</button><button class="text-button" data-action="close">להשאיר את הנתונים שלי</button>`);return;
+  }
   const ids=new Set(state.tasks.map(t=>t.id)),eventIds=new Set(state.events.map(e=>e.id));
   const tasks=[...state.tasks,...imported.tasks.filter(t=>!ids.has(t.id))],events=[...state.events,...imported.events.filter(e=>!eventIds.has(e.id))];
   if(tasks.length>1000||events.length>2000)throw new Error('capacity');
   mutate(()=>{state.tasks=tasks;state.events=events;},'המשימות וההתחייבויות מהגיבוי נוספו.');close();
  }catch{toast('לא הצלחנו לקרוא את הגיבוי. יש לבחור קובץ גיבוי תקין של StudyFlow.');}
 });
+const uiContext={getState:()=>state,getPlan:()=>plan,open,close,mutate,replace:value=>{state=value;},toast};
+const weeklyUI=setupWeeklyUI(uiContext);
+setupCoursesUI({...uiContext,addGoal:weeklyUI.addGoal});
 render();
-// The AI helper needs the local server; on a plain web host (GitHub Pages) its buttons are hidden.
-fetch('api/assistant').then(r=>r.ok?r.json():null).catch(()=>null).then(info=>{if(!info?.available)document.body.classList.add('no-helper');});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!sheet.open)render();});

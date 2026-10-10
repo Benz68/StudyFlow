@@ -36,7 +36,18 @@ export function expandEvents(events, now = new Date()) {
     if (!event || !validDate(event.date)) return [];
     const start = timeMinutes(event.start);
     const end = timeMinutes(event.end);
-    if (start === null || end === null || start >= end) return [];
+    if (start === null || end === null || start === end) return [];
+    if (start > end) {
+      if (!event.overnight) return [];
+      const previous = new Date(now); previous.setDate(previous.getDate()-1);
+      const occurrences = [localDate(previous),...dates].filter(date=>occursOn(event,date));
+      return occurrences.flatMap(date=>{
+        const next = new Date(`${date}T12:00:00`); next.setDate(next.getDate()+1);
+        return [{...event,date,occurrenceDate:date,end:'24:00'},
+          {...event,date:localDate(next),occurrenceDate:date,start:'00:00'}]
+          .filter(segment=>dates.includes(segment.date)&&segment.start!==segment.end);
+      });
+    }
     if (event.repeat !== 'weekly') return dates.filter(date => occursOn(event, date)).map(date => ({ ...event, date }));
     return dates.filter(date => occursOn(event, date))
       .map(date => ({ ...event, date }));
@@ -58,6 +69,24 @@ function occursOn(event, date) {
 
 export function eventsOverlap(a, b) {
   if (!a || !b || !validDate(a.date) || !validDate(b.date)) return false;
+  if (a.overnight || b.overnight || a.travelBefore || a.travelAfter || b.travelBefore || b.travelAfter) {
+    const shift = (date, days) => { const d = new Date(`${date}T12:00:00`); d.setDate(d.getDate()+days); return localDate(d); };
+    const bounds = event => {
+      const start = timeMinutes(event.start), end = timeMinutes(event.end);
+      if (start === null || end === null || start === end || (end < start && !event.overnight)) return null;
+      return [start-Math.min(180,Math.max(0,event.travelBefore||0)),end+(end<start?1440:0)+Math.min(180,Math.max(0,event.travelAfter||0))];
+    };
+    const x = bounds(a), y = bounds(b);
+    if (!x || !y) return false;
+    const start = shift(a.date > b.date ? a.date : b.date,-2);
+    const limit = 14+7*((a.excludedDates?.length||0)+(b.excludedDates?.length||0));
+    for (let offset=0;offset<limit;offset++) {
+      const date=shift(start,offset);
+      if (!occursOn(a,date)) continue;
+      for (let delta=-2;delta<=2;delta++) if (occursOn(b,shift(date,delta)) && x[0]<y[1]+delta*1440 && y[0]+delta*1440<x[1]) return true;
+    }
+    return false;
+  }
   const times = [a.start, a.end, b.start, b.end].map(timeMinutes);
   if (times.some(time => time === null) || times[0] >= times[1] || times[2] >= times[3]
     || times[0] >= times[3] || times[2] >= times[1]) return false;

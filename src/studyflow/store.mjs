@@ -1,10 +1,11 @@
+import { normalizeWeekly } from './weekly.mjs';
 import { localDate, normalizePreferences, normalizeCompletionLog, timeMinutes, validDate } from './planner.mjs';
 
 export const STORAGE_KEY = 'studyflow.fresh.v1';
 const text = (value, limit = 120) => typeof value === 'string' ? value.trim().slice(0, limit) : '';
 
 export function createState() {
-  return { tasks: [], events: [], preferences: normalizePreferences(), sessions: [], unscheduled: [] };
+  return { tasks: [], events: [], preferences: normalizePreferences(), sessions: [], unscheduled: [], ...normalizeWeekly() };
 }
 
 export function validateState(value) {
@@ -31,9 +32,11 @@ export function validateState(value) {
     if (!event || !text(event.id) || ids.has(text(event.id)) || !text(event.title) || !validDate(event.date)) return [];
     const start = timeMinutes(event.start);
     const end = timeMinutes(event.end);
-    if (start === null || end === null || start >= end) return [];
+    if (start === null || end === null || start === end || (start > end && event.overnight !== true)) return [];
     ids.add(text(event.id));
     const result = { id: text(event.id), title: text(event.title), date: event.date, start: event.start, end: event.end };
+    if (event.overnight === true) result.overnight = true;
+    for (const key of ['travelBefore', 'travelAfter']) if (Number.isFinite(event[key])) result[key] = Math.min(180, Math.max(0, Math.round(event[key])));
     if (event.repeat === 'weekly') {
       if (event.repeatUntil !== undefined && (!validDate(event.repeatUntil) || event.repeatUntil < event.date)) return [];
       result.repeat = 'weekly';
@@ -47,6 +50,7 @@ export function validateState(value) {
     return [result];
   });
   state.preferences = normalizePreferences(value.preferences);
+  Object.assign(state, normalizeWeekly(value));
   // Plans are derived afresh from validated inputs so old times cannot linger.
   return state;
 }
@@ -81,3 +85,4 @@ export function demoState(now = new Date()) {
   state.events = [{ id: 'demo-lecture', title: 'הרצאה באוניברסיטה', date: after(1), start: '10:00', end: '12:00' }];
   return state;
 }
+

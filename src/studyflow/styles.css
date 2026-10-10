@@ -1,3 +1,4 @@
+@import url('./weekly.css');
 @import url('./depth.css');
 :root{--ink:#1d2a3a;--muted:#66768a;--faint:#94a1ae;--teal:#0b7f84;--teal-dark:#086a6e;--teal-soft:#e8f4f3;--line:#e7ebef;--bg:#f6f7f9;--card:#fff;--warm:#fff5e8;--warm-ink:#7a5a33;--radius:16px;--ease:cubic-bezier(.2,.7,.3,1);font-family:Heebo,Arial,sans-serif;color:var(--ink);background:var(--bg);font-synthesis:none}
 
