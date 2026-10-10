@@ -15,8 +15,10 @@ try {
   const wizard=key=>page.locator(`[data-wizard="${key}"]:visible`).first().click();
   const course=key=>page.locator(`[data-course-action="${key}"]:visible`).first().click();
   const submit=id=>page.locator(`#${id} button[type=submit],#${id} button:not([type])`).last().click();
+  // The full weekly toolbar lives on the week view; home shows a single next step.
+  const weekView=()=>page.locator('[data-view=week]:visible').click();
   await page.locator('#main').waitFor();
-  assert.equal(await page.locator('[data-weekly=review]').isDisabled(),true,'Sunday current-week review locked');
+  await weekView();assert.equal(await page.locator('[data-weekly=review]').isDisabled(),true,'Sunday current-week review locked');
   await page.locator('[data-view=courses]:visible').click();await course('edit');
   await page.locator('#course-name').fill('מתמטיקה');await submit('course-edit');
   await course('open');await course('topics');
@@ -39,9 +41,10 @@ try {
   await weekly('partial');await page.locator('#done-minutes').fill('5');await submit('weekly-partial');
   assert.equal((await saved()).weekly.completions[0].minutes,5);
   await page.clock.setFixedTime(new Date('2026-10-17T20:00:00+03:00'));await page.reload();await page.locator('#main h1').waitFor();
-  assert.equal(await page.locator('[data-weekly=review]').isEnabled(),true);
+  await weekView();assert.equal(await page.locator('[data-weekly=review]').isEnabled(),true);
+  // The review already asks how the week felt, so the wizard opens at the courses step.
   await weekly('review');await submit('weekly-review');
-  for(let i=0;i<3;i++)await submit('wizard-form');
+  for(let i=0;i<2;i++)await submit('wizard-form');
   await wizard('approve');state=await saved();assert.equal(state.weekly.nextWeek.weekly.weekStart,'2026-10-18');
   assert.equal(await page.locator('[data-weekly=review]').count(),0,'submitted review replaced with edit upcoming');
   await weekly('edit-next');for(let i=0;i<3;i++)await submit('wizard-form');
@@ -54,7 +57,7 @@ try {
   await page.locator('#import-file').setInputFiles({name:'backup.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(backup))});
   await page.locator('[data-action=restore-backup]').click();assert.equal((await saved()).courses[0].topics[0].status,'learning');
   await page.clock.setFixedTime(new Date('2026-10-18T08:00:00+03:00'));await page.reload();await page.locator('#main h1').waitFor();
-  assert.equal(await page.locator('[data-weekly=edit-next]').count(),0,'pending promoted at Sunday');
+  await weekView();assert.equal(await page.locator('[data-weekly=edit-next]').count(),0,'pending promoted at Sunday');
   assert.equal(await page.locator('[data-weekly=review]').isDisabled(),true);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   assert.deepEqual(errors,[]);assert.deepEqual(api,[]);
