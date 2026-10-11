@@ -18,8 +18,8 @@ try {
   await page.locator('#main').waitFor();
   assert.equal(await page.locator('[data-weekly=review]').count(),0,'single questionnaire without separate review');
   await page.locator('[data-view=courses]:visible').click();await course('edit');
-  assert.equal(await page.locator('#course-edit input[type=number]').count(),0,'course creation does not allocate time');await page.locator('#course-name').fill('מתמטיקה');await submit('course-edit');
-  await course('open');await course('topics');
+  assert.equal(await page.locator('#course-edit [name=weeklyMinutes]').count(),0,'course creation does not allocate time');await page.locator('#course-name').fill('מתמטיקה');await submit('course-edit');
+  await course('open');await page.locator('dialog[open] [data-course-action=topics]').click();
   await page.locator('#syllabus-file').setInputFiles({name:'syllabus.txt',mimeType:'text/plain',buffer:Buffer.from('אינטגרלים\nנגזרות')});
   assert.equal((await saved()).courses[0].topics.length,0,'syllabus preview not saved');
   await submit('course-topics');await page.locator('[data-course-status]').first().selectOption('ready');

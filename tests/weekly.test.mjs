@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildWeeklyPlan,normalizeWeekly,commitmentIntervals,completeWeeklySession,moveWeeklySession,previewNextWeek,acceptNextWeek} from '../src/studyflow/weekly.mjs';
+import {buildWeeklyPlan,normalizeWeekly,commitmentIntervals,completeWeeklySession,moveWeeklySession,previewNextWeek,acceptNextWeek,applyChange,currentPlanningState} from '../src/studyflow/weekly.mjs';
 import {validateState} from '../src/studyflow/store.mjs';
 import {eventsOverlap,timeMinutes} from '../src/studyflow/planner.mjs';
 const now = new Date(2026,9,11,8);
@@ -65,6 +65,52 @@ test('next week preview is independent, explicit acceptance preserves current we
   assert.equal(accepted.weekly.weekStart,'2026-10-11');
   assert.equal(accepted.weekly.nextWeek.weekly.weekStart,'2026-10-18');
   assert.equal(normalizeWeekly(accepted,new Date(2026,9,18,8)).weekly.weekStart,'2026-10-18');
+});
+test('tasks respect calendar boundaries and stale weeks roll forward',()=>{
+ const saturday=new Date(2026,9,17,21,30), task={id:'essay',title:'Essay',minutes:150,deadline:'2026-10-20'};
+ const initial=state({tasks:[task]}), current=buildWeeklyPlan(initial,saturday);
+ assert.ok(current.sessions.every(s=>s.date<='2026-10-17'));
+ const next=previewNextWeek(initial,saturday);
+ assert.equal(next.weekly.sessions.filter(s=>s.taskId==='essay').reduce((n,s)=>n+s.minutes,0),150);
+ assert.ok(next.weekly.sessions.filter(s=>s.taskId==='essay').every(s=>s.date>='2026-10-18'&&s.date<='2026-10-20'));
+ const later=new Date(2026,10,1,8),stale=currentPlanningState(state({tasks:[{...task,deadline:'2026-11-03'}]}),later);
+ assert.equal(stale.weekly.weekStart,'2026-11-01');
+ assert.ok(stale.weekly.sessions.some(s=>s.taskId==='essay'&&s.date>='2026-11-01'));
+});
+test('work is not chopped into scraps to squeeze it before a commitment',()=>{
+  const s=state({tasks:[{id:'read',title:'Read',minutes:60,deadline:'2026-10-13'},{id:'walk',title:'Walk',minutes:30,deadline:'2026-10-12'}],
+    events:[{id:'lecture',title:'Lecture',date:'2026-10-11',start:'10:00',end:'12:00'}]});
+  const p=buildWeeklyPlan(s,now), mine=p.sessions.filter(x=>x.taskId==='read'||x.taskId==='walk');
+  assert.ok(mine.every(x=>x.minutes>=30),mine.map(x=>x.minutes).join(','));
+  assert.equal(mine.reduce((n,x)=>n+x.minutes,0),90);
+});
+test('something changed: a multi-day blackout moves work elsewhere and can be undone',()=>{
+  const s=savePlan(state()), days=['2026-10-11','2026-10-12','2026-10-13'];
+  const off=applyChange(s,days,'off',now), p=buildWeeklyPlan(off,now);
+  assert.ok(!p.sessions.some(x=>days.includes(x.date)));
+  assert.equal(p.plannedMinutes+p.unscheduled.reduce((n,x)=>n+x.minutes,0),300);
+  assert.deepEqual(normalizeWeekly(off,now).weekly.overrides.map(o=>o.mode),['off','off','off']);
+  const back=applyChange(off,['2026-10-12'],'normal',now);
+  assert.deepEqual(back.weekly.overrides.map(o=>o.date),['2026-10-11','2026-10-13']);
+  const tired=buildWeeklyPlan(applyChange(s,['2026-10-14'],'tired',now),now);
+  assert.ok(tired.sessions.filter(x=>x.date==='2026-10-14').every(x=>x.minutes<=30));
+  const more=applyChange(state({preferences:{maxDailyMinutes:60}}),['2026-10-11'],'more',now);more.goals[0].minutes=1000;
+  assert.ok(buildWeeklyPlan(more,now).sessions.filter(x=>x.date==='2026-10-11').reduce((n,x)=>n+x.minutes,0)>60);
+  assert.throws(()=>applyChange(s,['2026-10-01'],'off',now),RangeError);
+});
+test('weekly review can pause a recurring goal and block known busy days next week',()=>{
+  const s=savePlan(state()), sat=new Date(2026,9,17,20);
+  const next=previewNextWeek(s,sat,{skipGoalIds:['math'],offDays:['2026-10-19','2026-10-30']});
+  assert.deepEqual(next.weekly.skippedGoalIds,['math']);
+  assert.deepEqual(next.weekly.overrides.map(o=>o.date),['2026-10-19']);
+  assert.equal(next.weekly.sessions.filter(x=>x.goalId==='math').length,0);
+  const marked=applyChange(s,['2026-10-17','2026-10-20'],'less',sat);
+  assert.deepEqual(previewNextWeek(marked,sat,{offDays:['2026-10-19']}).weekly.overrides.map(o=>o.date+o.mode),['2026-10-20less','2026-10-19off']);
+  const accepted=acceptNextWeek(s,previewNextWeek(s,sat),sat), later=applyChange(accepted,['2026-10-21'],'off',sat);
+  assert.ok(normalizeWeekly(later,new Date(2026,9,18,8)).weekly.overrides.some(o=>o.date==='2026-10-21'&&o.mode==='off'));
+  const kept=previewNextWeek(s,sat,{offDays:['2026-10-19']});
+  assert.ok(kept.weekly.sessions.some(x=>x.goalId==='math'));
+  assert.ok(!kept.weekly.sessions.some(x=>x.date==='2026-10-19'));
 });
 test('whole week unavailable yields exact deficit; delayed return skips stale weeks',()=>{
   const s=state({preferences:{excludedDays:[0,1,2,3,4,5,6]}});

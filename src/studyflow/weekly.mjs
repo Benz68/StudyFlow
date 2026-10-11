@@ -9,13 +9,14 @@ const bounded = (n, fallback, min, max) => Math.min(max, Math.max(min, Math.roun
 const clean = (s, max = 120) => typeof s === 'string' ? s.trim().slice(0, max) : '';
 const list = a => Array.isArray(a) ? a : [];
 const choice = (v, options, fallback) => options.includes(v) ? v : fallback;
+const changeModes = ['off','less','tired','more'];
 const priorities = ['high', 'normal', 'low'];
 const unique = a => [...new Map(a.map(x => [x.id, x])).values()];
 
 export function normalizeWeekly(value = {}, now = new Date(), nested = false) {
   if (!nested && validDate(value.weekly?.nextWeek?.weekly?.weekStart) && value.weekly.nextWeek.weekly.weekStart <= localDate(now)) {
     const future = value.weekly.nextWeek;
-    value = {...value,goals:future.goals,courses:Array.isArray(value.courses) ? value.courses : future.courses,weekly:future.weekly};
+    value = {...value,goals:future.goals,courses:Array.isArray(value.courses) ? value.courses : future.courses,weekly:{...future.weekly,overrides:[...list(value.weekly.overrides).filter(o=>o?.date>=future.weekly.weekStart&&!list(future.weekly.overrides).some(m=>m?.date===o.date)),...list(future.weekly.overrides)]}};
   }
   const w = value.weekly || {};
   const start = validDate(w.weekStart) ? weekStart(w.weekStart) : weekStart(now);
@@ -52,7 +53,7 @@ export function normalizeWeekly(value = {}, now = new Date(), nested = false) {
     reviews: list(w.reviews).slice(-52).filter(x => x && validDate(x.weekStart)).map(x => ({weekStart: x.weekStart,
       completedMinutes: bounded(x.completedMinutes, 0, 0, 10080), note: clean(x.note, 500)})),
     overrides: list(w.overrides).slice(0, 14).filter(x => x && validDate(x.date)).map(x => ({date: x.date,
-      maxMinutes: bounded(x.maxMinutes, 120, 0, 720), energy: choice(x.energy, ['low', 'normal', 'high'], 'normal')})),
+      ...(changeModes.includes(x.mode)?{mode:x.mode}:{}), maxMinutes: bounded(x.maxMinutes, 120, 0, 720), energy: choice(x.energy, ['low', 'normal', 'high'], 'normal')})),
   } };
 }
 
@@ -86,8 +87,9 @@ export function buildWeeklyPlan(input, now = new Date()) {
   const cap = date => {
     const override = w.overrides.find(x => x.date === date);
     const energy = override?.energy || w.energy;
-    return Math.min(p.maxDailyMinutes, override?.maxMinutes ?? Infinity,
-      Math.round(({light: 120, balanced: 240, heavy: 360}[w.load]) * ({low: .65, normal: 1, high: 1.15}[energy])));
+    const base=Math.round(({light:120,balanced:240,heavy:360}[w.load])*({low:.65,normal:1,high:1.15}[energy]));
+    if(override?.mode==='more') return Math.min(720,Math.max(base,p.maxDailyMinutes)+120);
+    return Math.min(p.maxDailyMinutes,override?.maxMinutes??Infinity,base);
   };
   const obstacles = commitmentIntervals(state.events, start, end);
   for (const item of obstacles) busy.get(item.date).push(item);
@@ -142,11 +144,12 @@ export function buildWeeklyPlan(input, now = new Date()) {
     const pref = !g.preferredTime || ['any','inherit'].includes(g.preferredTime) ? p.preferredTime : g.preferredTime;
     const window = {any:[0,1440],morning:[0,720],afternoon:[720,1020],evening:[1020,1440]}[pref];
     while (left > 0) {
+      const want=left>length&&left-length<15?Math.ceil(left/2):length;
       const candidates = [];
       for (const date of dates) {
         if (date < today || (g.deadline && date > g.deadline) || (g.notBefore && date < localDate(new Date(g.notBefore)))) continue;
         const override = w.overrides.find(x => x.date === date);
-        const maximum = Math.min(left,length,override?.energy === 'low' ? 30 : 180,cap(date)-used.get(date));
+        const maximum = Math.min(left,want,override?.energy === 'low' ? 30 : 180,cap(date)-used.get(date));
         if (maximum < Math.min(15,left)) continue;
         for (let a = p.startHour*60; a < p.endHour*60; a+=5) {
           const nextBusy = Math.min(p.endHour*60,...busy.get(date).filter(x=>x.start>a).map(x=>x.start));
@@ -161,7 +164,7 @@ export function buildWeeklyPlan(input, now = new Date()) {
           const ideal = pref === 'evening' ? 1080 : pref === 'afternoon' ? 840 : 600;
           const dayGoals = sessions.filter(s=>s.date===date).map(s=>s.goalId || s.taskId);
           const switching = w.fewerSwitches && dayGoals.length && !dayGoals.includes(g.id) ? 450 : 0;
-          const score = (fallback ? 10000 : 0) + switching + used.get(date)*3 + Math.abs(a-ideal)/5 + dates.indexOf(date)*2;
+          const score = (fallback ? 10000 : 0) + switching + (Math.min(left,want)-size)*3 + used.get(date)*3 + Math.abs(a-ideal)/5 + dates.indexOf(date)*2;
           candidates.push({s,score});
         }
       }
@@ -217,9 +220,14 @@ export function preparePlanningWeek(state, now = new Date(), options = {}) {
       minutes:Math.max(0,g.minutes-previous.completions.filter(c=>c.goalId===g.id).reduce((n,c)=>n+c.minutes,0))} : g).filter(g=>g.minutes>0);
     const review={weekStart:previous.weekStart,completedMinutes:previous.completions.reduce((n,c)=>n+c.minutes,0),note:clean(options.note,500)};
     const reviews=previous.reviews.some(r=>r.weekStart===review.weekStart) ? previous.reviews : [...previous.reviews,review].slice(-52);
-    draft={...current,goals,weekly:{...previous,nextWeek:undefined,weekStart:target,sessions:[],completions:[],overrides:[],skippedGoalIds:[],reviews}};
+    draft={...current,goals,weekly:{...previous,nextWeek:undefined,weekStart:target,sessions:[],completions:[],overrides:previous.overrides.filter(o=>o.date>=target&&o.date<=addDays(target,6)),skippedGoalIds:[],reviews}};
   }
   draft={...draft,...normalizeWeekly(draft,now,true)};
+  if(Array.isArray(options.skipGoalIds)) draft.weekly.skippedGoalIds=options.skipGoalIds.filter(id=>draft.goals.some(g=>g.id===id&&g.repeatWeekly));
+  if(Array.isArray(options.offDays)) {
+    const days=[...new Set(options.offDays)].filter(d=>validDate(d)&&d>=target&&d<=addDays(target,6));
+    draft.weekly.overrides=[...draft.weekly.overrides.filter(o=>!days.includes(o.date)),...days.map(date=>({date,maxMinutes:0,energy:'normal',mode:'off'}))];
+  }
   draft.weekly.load=choice(options.load,['light','balanced','heavy'],draft.weekly.load);
   draft.weekly.energy=choice(options.energy,['low','normal','high'],draft.weekly.energy);
   const plan=buildWeeklyPlan(draft,now);
@@ -313,6 +321,21 @@ export function adjustWeeklyPlan(state, action, now = new Date()) {
   const plan=buildWeeklyPlan(next,now);
   w.sessions=plan.retainedSessions;
   next.unscheduled=plan.unscheduled;
+  return next;
+}
+
+
+const changeSettings = {off: {maxMinutes: 0, energy: 'normal'}, less: {maxMinutes: 60, energy: 'normal'},
+  tired: {maxMinutes: 720, energy: 'low'}, more: {maxMinutes: 720, energy: 'high'}};
+export function applyChange(state, dates, mode, now = new Date()) {
+  if (mode !== 'normal' && !changeModes.includes(mode)) throw new RangeError('נבחר מה השתנה.');
+  const today = localDate(now), next = {...state, ...normalizeWeekly(state, now)}, w = next.weekly;
+  const days = [...new Set(list(dates))].filter(d => validDate(d) && d >= today && d <= addDays(weekStart(now),13)).sort();
+  if (!days.length || days.length > 14) throw new RangeError('נבחר ימים מהיום והלאה, עד שבועיים קדימה.');
+  w.overrides = [...w.overrides.filter(o => o.date >= today && !days.includes(o.date)),
+    ...(mode === 'normal' ? [] : days.map(date => ({date, ...changeSettings[mode], mode})))].sort((a, b) => a.date.localeCompare(b.date)).slice(0, 14);
+  w.sessions = w.sessions.filter(s => s.locked || !days.includes(s.date) || s.date < today
+    || (s.date === today && timeMinutes(s.start) < now.getHours()*60 + now.getMinutes()));
   return next;
 }
 
