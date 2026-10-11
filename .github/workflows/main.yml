@@ -1,7 +1,9 @@
-# Optional manual GitHub Pages deployment; production uses Vercel.
+# Publish the site automatically when main is updated.
 name: Deploy site to GitHub Pages
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
