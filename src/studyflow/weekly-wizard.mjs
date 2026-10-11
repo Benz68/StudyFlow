@@ -1,6 +1,6 @@
 import {escapeHTML as esc,icon,duration} from './views.mjs';
 import {localDate} from './planner.mjs';
-import {buildWeeklyPlan,acceptNextWeek,adjustWeeklyPlan,moveWeeklySession} from './weekly.mjs';
+import {buildWeeklyPlan,acceptNextWeek,adjustWeeklyPlan,moveWeeklySession,preparePlanningWeek,acceptPlanningWeek} from './weekly.mjs';
 const clone=x=>JSON.parse(JSON.stringify(x));
 const heading=t=>`<div class="sheet-top"><h2 id="dialog-title" tabindex="-1">${t}</h2><button class="icon-button" data-action="close" aria-label="סגירה">${icon('close')}</button></div>`;
 const choices=(items,value)=>items.map(([v,t])=>`<option value="${v}" ${v===value?'selected':''}>${t}</option>`).join('');
@@ -9,7 +9,7 @@ const active=(g,s)=>g.repeatWeekly||g.weekStart===s.weekly.weekStart;
 const started=s=>s.date<localDate()||(s.date===localDate()&&s.start<new Date().toTimeString().slice(0,5));
 export function setupWeeklyWizard(ctx){
  const {getState,open,close,mutate,replace,toast}=ctx;
- let draft,step=0,future=false,history=[],explanation='';
+ let draft,step=0,future=false,history=[],explanation='',questionnaire=false;
  const floor=g=>draft.weekly.completions.filter(c=>c.goalId===g.id).reduce((n,c)=>n+c.minutes,0)+draft.weekly.sessions.filter(s=>s.goalId===g.id&&(s.locked||started(s))).reduce((n,s)=>n+s.minutes,0);
  function start(value=getState(),next=false){
   draft=clone(value);future=next;step=0;history=[];explanation='';
@@ -28,6 +28,11 @@ export function setupWeeklyWizard(ctx){
   const w=draft.weekly;
   let content='';
   if(step===0)content=`<p class="field-help">ההתחייבויות הקבועות כבר בפנים. נבחר קצב שמתאים לשבוע שמתחיל ב־${date(w.weekStart)}.</p><label for="wizard-load">כמה מתאים להשקיע?</label><select id="wizard-load" name="load">${choices([['light','קל · יותר מקום לנשום'],['balanced','מאוזן'],['heavy','מלא · יותר התקדמות']],w.load)}</select><label for="wizard-energy">איך האנרגיה שלך?</label><select id="wizard-energy" name="energy">${choices([['low','נמוכה'],['normal','רגילה'],['high','גבוהה']],w.energy)}</select>`;
+  if(step===0&&w.weekStart>getState().weekly.weekStart){
+   const previous=getState(),done=previous.weekly.completions.reduce((n,c)=>n+c.minutes,0);
+   const carry=previous.goals.filter(g=>!g.repeatWeekly&&g.weekStart===previous.weekly.weekStart&&g.minutes>previous.weekly.completions.filter(c=>c.goalId===g.id).reduce((n,c)=>n+c.minutes,0));
+   content=`<p class="field-help">השבוע דיווחת על ${duration(done)} של התקדמות. נשתמש במה שלמדת כדי לבחור קצב לשבוע הבא.</p>`+content+(carry.length?`<details class="advanced"><summary>מטרות חד־פעמיות להמשך</summary>${carry.map(g=>`<label class="wizard-check"><input type="checkbox" name="carry" value="${esc(g.id)}" ${draft.goals.some(x=>x.id===g.id&&x.weekStart===w.weekStart)?'checked':''}>${esc(g.title)}</label>`).join('')}</details>`:'');
+  }
   if(step===1)content=`<p class="field-help">בוחרים קורסים וכמה להשקיע בכל אחד. אפשר לדלג השבוע בלי למחוק את הקורס או את ההתקדמות.</p>${rows('study').map(goalRow).join('')||'<p>אין עדיין קורסים. אפשר להוסיף אותם באזור הקורסים ולחזור לכאן.</p>'}${rows('study').length?'<button type="button" class="text-button" data-wizard="suggest">תציעו לי חלוקת זמן</button>':''}`;
   if(step===2)content=`<p class="field-help">תחביב, אימון או רעיון משלך. אפשר גם להמשיך בלי להוסיף דבר.</p>${rows('personal').map(goalRow).join('')}<details class="advanced" ${rows('personal').length?'':'open'}><summary>להוסיף מטרה אישית</summary><label for="personal-title">מה תרצה לקדם?</label><input id="personal-title" name="personalTitle" maxlength="120" placeholder="אימון, גיטרה, פרויקט אישי"><label for="personal-hours">כמה שעות השבוע?</label><input id="personal-hours" name="personalHours" type="number" min="0.25" max="168" step="0.25" value="1"><button type="button" class="text-button" data-wizard="add-personal">להוסיף עוד מטרה</button></details>`;
   open(`${heading(['איך נראה השבוע שלך?','באילו קורסים נתקדם?','ומה חשוב לך בשביל עצמך?'][step])}<p class="wizard-step">שלב ${step+1} מתוך 3</p><form id="wizard-form">${content}<p id="wizard-error" role="alert"></p><div class="weekly-actions"><button class="primary" type="submit">${step===2?'לבנות את ההצעה':'להמשיך'}</button>${step?'<button class="text-button" type="button" data-wizard="back">חזרה</button>':''}</div></form>`);
@@ -35,7 +40,18 @@ export function setupWeeklyWizard(ctx){
  }
  function collect(form,addPersonal=true){
   const fd=new FormData(form);
-  if(step===0){draft.weekly.load=fd.get('load');draft.weekly.energy=fd.get('energy');return;}
+  if(step===0){
+   draft.weekly.load=fd.get('load');draft.weekly.energy=fd.get('energy');
+   const previous=getState();
+   if(draft.weekly.weekStart>previous.weekly.weekStart){
+    for(const g of previous.goals.filter(g=>!g.repeatWeekly&&g.weekStart===previous.weekly.weekStart)){
+     const pending=draft.goals.find(x=>x.id===g.id);if(!pending)continue;
+     if(fd.getAll('carry').includes(g.id)){pending.weekStart=draft.weekly.weekStart;pending.minutes=Math.max(5,g.minutes-previous.weekly.completions.filter(c=>c.goalId===g.id).reduce((n,c)=>n+c.minutes,0));}
+     else pending.weekStart=g.weekStart;
+    }
+   }
+   return;
+  }
   const selected=fd.getAll('selected');
   for(const g of rows(step===1?'study':'personal')){
    const hours=Number(fd.get(`hours:${g.id}`)),minimum=floor(g);
@@ -58,7 +74,7 @@ export function setupWeeklyWizard(ctx){
   }
  }
  function release(){draft.weekly.sessions=draft.weekly.sessions.filter(s=>s.locked||started(s));}
- function preview(value,next=false){draft=clone(value);future=next;history=[];explanation='';showPreview();}
+ function preview(value,next=false){questionnaire=false;draft=clone(value);future=next;history=[];explanation='';showPreview();}
  function showPreview(){
   const plan=buildWeeklyPlan(draft);draft.weekly.sessions=plan.retainedSessions;
   open(`${heading('זו ההצעה לשבוע שלך')}<p>${date(plan.weekStart)}–${date(plan.weekEnd)} · ${duration(plan.plannedMinutes)} בתוכנית</p><p class="field-help">ההצעה נשמרת רק אחרי אישור. התחייבויות ומפגשים שנעלת נשמרים.</p>${explanation?`<p class="weekly-gap" role="status">${esc(explanation)}</p>`:''}${plan.unscheduled.length?`<div class="weekly-gap"><b>מה עדיין לא נכנס?</b>${plan.unscheduled.map(g=>`<p>${esc(g.title)} · ${duration(g.minutes)}<br>${esc(g.reason)}</p>`).join('')}</div>`:''}<div class="weekly-preview">${plan.sessions.map(s=>`<div><span>${date(s.date)} · <bdi>${s.start}–${s.end}</bdi>${s.locked?' · נעול':''}</span><b>${esc(s.title)}</b>${s.goalId?`<button class="text-button" data-wizard="move" data-id="${esc(s.id)}">לשנות את הזמן הזה</button>`:''}</div>`).join('')||'<p>אין מפגשים לשיבוץ. אפשר לחזור לבחירת המטרות.</p>'}</div><div class="weekly-actions"><button class="primary" data-wizard="approve">לאשר את התוכנית</button><button class="text-button" data-wizard="adjust">בואו נתאים את זה</button><button class="text-button" data-wizard="edit">עריכה עצמית של המטרות</button>${history.length?'<button class="text-button" data-wizard="undo">להצעה הקודמת</button>':''}</div>`);
@@ -101,9 +117,9 @@ export function setupWeeklyWizard(ctx){
     showPreview();break;
    }
    case 'undo':if(history.length){draft=history.pop();explanation='חזרנו להצעה הקודמת.';showPreview();}break;
-   case 'approve':{const next=future?acceptNextWeek(getState(),draft):draft;mutate(()=>replace(next),'התוכנית אושרה. אפשר לערוך אותה בכל רגע.',true);close();break;}
+   case 'approve':{const next=questionnaire?acceptPlanningWeek(getState(),draft):future?acceptNextWeek(getState(),draft):draft;mutate(()=>replace(next),'התוכנית אושרה. אפשר לערוך אותה בכל רגע.',true);close();break;}
    case 'move':{const s=draft.weekly.sessions.find(s=>s.id===b.dataset.id);if(!s)break;open(`${heading('מתי מתאים לך?')}<form id="wizard-move" data-id="${esc(s.id)}"><label>תאריך<input name="date" type="date" value="${s.date}" required></label><label>שעה<input name="start" type="time" value="${s.start}" required></label><p role="alert"></p><button class="primary" type="submit">להעביר ולנעול</button><button type="button" class="text-button" data-wizard="preview">חזרה</button></form>`);break;}
   }}catch(e){toast(e.message);}
  });
- return {start,preview};
+ return {start,preview,startPlanning(){questionnaire=true;const value=preparePlanningWeek(getState());start(value,value.weekly.weekStart>getState().weekly.weekStart);},adjustCurrent(){questionnaire=false;draft=clone(getState());future=false;history=[];explanation='';adjustMenu();}};
 }

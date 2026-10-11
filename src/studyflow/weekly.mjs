@@ -202,46 +202,77 @@ export function moveWeeklySession(state, id, date, start, now = new Date()) {
   next.weekly.sessions = plan.retainedSessions;
   return next;
 }
-export function reviewAvailability(state, now = new Date()) {
-  const normalized = normalizeWeekly(state, now), w = normalized.weekly;
-  const opensAt = new Date(`${addDays(w.weekStart, 6)}T20:00:00`);
-  const submitted = [...w.reviews, ...list(w.nextWeek?.weekly?.reviews)].some(r=>r.weekStart===w.weekStart);
-  return {open: !submitted && w.weekStart <= weekStart(now) && now >= opensAt, submitted, opensAt};
+export function planningTarget(now = new Date()) {
+  const current = weekStart(now);
+  return now.getDay() === 6 && now.getHours() >= 19 ? addDays(current,7) : current;
 }
-function requireReview(state, now) {
-  const availability = reviewAvailability(state, now);
-  if (availability.submitted) throw new RangeError('סיכום השבוע כבר נשמר. אפשר לערוך את התוכנית שהכנת.');
-  if (!availability.open) throw new RangeError('סיכום השבוע ייפתח במוצ״ש בשעה 20:00.');
+export function preparePlanningWeek(state, now = new Date(), options = {}) {
+  const current={...state,...normalizeWeekly(state,now)}, target=planningTarget(now);
+  let draft;
+  if(current.weekly.weekStart===target) draft=current;
+  else if(current.weekly.nextWeek?.weekly.weekStart===target) draft={...current,...current.weekly.nextWeek,courses:current.courses};
+  else {
+    const previous=current.weekly, carry=list(options.carryGoalIds);
+    const goals=current.goals.map(g=>!g.repeatWeekly && carry.includes(g.id) ? {...g,weekStart:target,
+      minutes:Math.max(0,g.minutes-previous.completions.filter(c=>c.goalId===g.id).reduce((n,c)=>n+c.minutes,0))} : g).filter(g=>g.minutes>0);
+    const review={weekStart:previous.weekStart,completedMinutes:previous.completions.reduce((n,c)=>n+c.minutes,0),note:clean(options.note,500)};
+    const reviews=previous.reviews.some(r=>r.weekStart===review.weekStart) ? previous.reviews : [...previous.reviews,review].slice(-52);
+    draft={...current,goals,weekly:{...previous,nextWeek:undefined,weekStart:target,sessions:[],completions:[],overrides:[],skippedGoalIds:[],reviews}};
+  }
+  draft={...draft,...normalizeWeekly(draft,now,true)};
+  draft.weekly.load=choice(options.load,['light','balanced','heavy'],draft.weekly.load);
+  draft.weekly.energy=choice(options.energy,['low','normal','high'],draft.weekly.energy);
+  const plan=buildWeeklyPlan(draft,now);
+  draft.weekly.sessions=plan.retainedSessions;
+  draft.unscheduled=plan.unscheduled;
+  return draft;
 }
-export function previewNextWeek(state, now = new Date(), options = {}) {
-  requireReview(state, now);
-  const next = {...state,...normalizeWeekly(state,now)};
-  const previous = next.weekly;
-  const start = addDays(previous.weekStart,7) < weekStart(now) ? weekStart(now) : addDays(previous.weekStart,7);
-  const carry = list(options.carryGoalIds);
-  next.goals = next.goals.map(g => !g.repeatWeekly && carry.includes(g.id) ? {...g,weekStart:start,minutes:Math.max(0,g.minutes-previous.completions.filter(c=>c.goalId===g.id).reduce((a,c)=>a+c.minutes,0))} : g).filter(g=>g.minutes>0);
-  next.weekly = {...previous,nextWeek:undefined,weekStart:start,sessions:[],completions:[],overrides:[],
-    load:choice(options.load,['light','balanced','heavy'],previous.load), energy:choice(options.energy,['low','normal','high'],previous.energy),
-    reviews:[...previous.reviews,{weekStart:previous.weekStart,completedMinutes:previous.completions.reduce((a,c)=>a+c.minutes,0),note:clean(options.note,500)}].slice(-52)};
-  const plan = buildWeeklyPlan(next, now);
-  next.weekly.sessions = plan.retainedSessions;
-  next.unscheduled = plan.unscheduled;
+export function acceptPlanningWeek(state, draft, now = new Date()) {
+  const target=planningTarget(now), actual=weekStart(now);
+  if(draft?.weekly?.weekStart!==target || target>addDays(actual,7)) throw new RangeError('השבוע לתכנון השתנה. יש לפתוח שוב את השאלון.');
+  const current={...state,...normalizeWeekly(state,now)};
+  const existing=current.weekly.weekStart===target ? current : current.weekly.nextWeek?.weekly.weekStart===target ? current.weekly.nextWeek : null;
+  const next={...draft,...normalizeWeekly(draft,now,true)};
+  if(existing) {
+    // Saved completion reports are authoritative, including reports made after the dialog opened.
+    next.weekly.completions=structuredClone(existing.weekly.completions);
+    for(const g of existing.goals) {
+      const done=next.weekly.completions.filter(c=>c.goalId===g.id).reduce((n,c)=>n+c.minutes,0);
+      if(!done) continue;
+      const proposed=next.goals.find(x=>x.id===g.id);
+      if(proposed) proposed.minutes=Math.max(proposed.minutes,done);
+      else next.goals.push({...g,minutes:Math.max(g.minutes,done)});
+    }
+  }
+  next.weekly.sessions=buildWeeklyPlan(next,now).retainedSessions;
+  if(target===actual) return {...state,...next,weekly:{...next.weekly,...(current.weekly.nextWeek?.weekly.weekStart===addDays(actual,7) ? {nextWeek:current.weekly.nextWeek} : {})}};
+  return {...state,...current,courses:next.courses,weekly:{...current.weekly,reviews:next.weekly.reviews,nextWeek:normalizeWeekly(next,now,true)}};
+}
+export function currentPlanningState(state, now = new Date()) {
+  const current={...state,...normalizeWeekly(state,now)};
+  if(current.weekly.weekStart===weekStart(now)) return current;
+  const morning=new Date(now);morning.setHours(0,0,0,0);
+  const next=preparePlanningWeek(current,morning);
+  // These placements are newly generated, not missed commitments from an approved plan.
+  next.weekly.sessions=[];
+  next.weekly.sessions=buildWeeklyPlan(next,now).retainedSessions;
+  if(current.weekly.nextWeek?.weekly.weekStart===addDays(weekStart(now),7)) next.weekly.nextWeek=current.weekly.nextWeek;
   return next;
 }
+export function reviewAvailability(state, now = new Date()) {
+  const normalized = normalizeWeekly(state, now), w = normalized.weekly;
+  const opensAt = new Date(`${addDays(w.weekStart, 6)}T19:00:00`);
+  const submitted = [...w.reviews, ...list(w.nextWeek?.weekly?.reviews)].some(r=>r.weekStart===w.weekStart);
+  return {open: true, submitted, opensAt, target:planningTarget(now)};
+}
+
+export function previewNextWeek(state, now = new Date(), options = {}) {
+  return preparePlanningWeek(state,now,options);
+
+}
 export function acceptNextWeek(state, preview, now = new Date()) {
-  const next = normalizeWeekly(preview,now);
-  const current = normalizeWeekly(state, now);
-  const pending=current.weekly.nextWeek;
-  if (pending && next.weekly.weekStart===pending.weekly.weekStart && next.weekly.weekStart===addDays(weekStart(now),7)) {
-    next.weekly.reviews=pending.weekly.reviews;
-    return {...state,...current,weekly:{...current.weekly,nextWeek:next}};
-  }
-  requireReview(state, now);
-  const expected = addDays(current.weekly.weekStart,7) < weekStart(now) ? weekStart(now) : addDays(current.weekly.weekStart,7);
-  if (next.weekly.weekStart !== expected || expected > addDays(weekStart(now),7)) throw new RangeError('אפשר לתכנן רק את השבוע הנוכחי והשבוע הבא');
-  if (!next.weekly.reviews.some(r=>r.weekStart===current.weekly.weekStart)) throw new RangeError('יש להכין תצוגה מקדימה חדשה');
-  if (next.weekly.weekStart <= localDate(now)) return {...state,...next};
-  return {...state,...current,weekly:{...current.weekly,reviews:next.weekly.reviews,nextWeek:next}};
+  return acceptPlanningWeek(state,preview,now);
+
 }
 
 export function releaseFlexibleSessions(state, now = new Date()) {

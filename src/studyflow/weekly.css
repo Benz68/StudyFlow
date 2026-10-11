@@ -21,3 +21,5 @@
 .weekly-actions button:disabled{opacity:.65;cursor:default}
 @media(max-width:600px){.weekly-actions{gap:3px 8px}.weekly-actions .text-button{font-size:13px}.weekly-intro{padding-top:0;margin-bottom:16px}.weekly-session-actions .text-button{font-size:12px}}
 @media(prefers-reduced-motion:reduce){.weekly-intro *{animation:none!important;transition:none!important}}
+
+.hub-plan{display:flex;gap:18px;justify-content:space-between;align-items:center;flex-wrap:wrap;padding:20px 0}.hub-section{padding:24px 0;border-top:1px solid var(--line);margin-top:24px}.hub-section>h3{margin:24px 0 12px}.hub-flex .eyebrow{color:var(--teal)}.hub-fixed .eyebrow{color:var(--warm-ink)}.hub-fixed .commitments>.section-heading{display:none}.hub-fixed>.primary{margin-bottom:16px}.hub-section .task-list>.day-empty{padding:12px}.hub-section .task-list>.day-empty button{display:none}

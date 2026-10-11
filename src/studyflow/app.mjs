@@ -5,12 +5,15 @@ import {addForm,settingsForm,proContent} from './forms.mjs';
 import {celebrateCompletion} from './motion.mjs';
 import {startTour} from './tour.mjs';
 import {enhanceDates} from './datepicker.mjs';
-import {buildWeeklyPlan,normalizeWeekly} from './weekly.mjs';
+import {buildWeeklyPlan,normalizeWeekly,currentPlanningState} from './weekly.mjs';
 import {renderCourses,setupCoursesUI} from './courses-ui.mjs';
 import {weeklyPanel,setupWeeklyUI} from './weekly-ui.mjs';
+import {renderPlanningHub} from './planning-hub.mjs';
+import {renderCalendar} from './calendar.mjs';
 
 let state=loadState(), plan, view='today', selected=localDate(), undoState=null;
 let realState=null, editing=null, returnFocus=null, toastTimer, storageFailed=false, pendingImport=null;
+let calendarMode='week',calendarMonth=localDate().slice(0,7),calendarScope='current';
 const app=document.querySelector('#app');
 app.innerHTML=shell();document.body.classList.add('no-helper');
 const sheet=document.querySelector('#sheet');
@@ -22,7 +25,7 @@ document.addEventListener('keydown',event=>{
  if(event.key==='Escape'&&sheet.open){event.preventDefault();close();}
 },true);
 document.addEventListener('pointerdown',()=>{document.documentElement.dataset.inputModality='pointer';},true);
-const focusAttributes=['data-action','data-id','data-date','data-view'];
+const focusAttributes=['data-action','data-id','data-date','data-view','data-weekly','data-course-action'];
 function rememberFocus(element){
  if(!element)return null;
  const attributes=focusAttributes.filter(name=>element.hasAttribute(name)).map(name=>[name,element.getAttribute(name)]);
@@ -36,9 +39,19 @@ function restoreFocus(saved){
  (target||main).focus({preventScroll:true});
 }
 function render(){
- state={...state,...normalizeWeekly(state)};plan=buildWeeklyPlan(state);state.weekly.sessions=plan.retainedSessions;main.classList.remove('fade');
+ const focused=main.contains(document.activeElement)?rememberFocus(document.activeElement):null;
+ state=currentPlanningState(state);plan=buildWeeklyPlan(state);state.weekly.sessions=plan.retainedSessions;main.classList.remove('fade');
  const dates=weekDates(new Date(plan.weekStart+'T12:00:00'));if(!dates.includes(selected))selected=dates.includes(localDate())?localDate():dates[0];
- main.innerHTML=view==='courses'?renderCourses(state):weeklyPanel(state,plan,view)+renderMain({state:{...state,eventSeries:state.events,events:expandEvents(state.events,new Date(plan.weekStart+'T12:00:00'))},plan,view,selected,dates,today:localDate()});
+ if(view==='courses')main.innerHTML=renderCourses(state);
+ else if(view==='tasks')main.innerHTML=renderPlanningHub(state);
+ else if(view==='week'){
+  const upcoming=calendarScope==='next'&&state.weekly.nextWeek;
+  const calendarState=upcoming?{...state,...state.weekly.nextWeek,courses:state.courses}:state;
+  const calendarPlan=upcoming?buildWeeklyPlan(calendarState):plan;
+  let calendar=renderCalendar({state:calendarState,plan:calendarPlan,mode:calendarMode,month:calendarMonth,weekStart:calendarPlan.weekStart});
+  if(upcoming)calendar=calendar.replaceAll('data-weekly="move"','data-weekly="view-next"');
+  main.innerHTML=weeklyPanel(state,plan,view)+(calendarMode==='week'?`<div class="weekly-actions"><button class="text-button" data-calendar-scope="current" aria-pressed="${!upcoming}">השבוע הנוכחי</button><button class="text-button" data-calendar-scope="next" aria-pressed="${!!upcoming}" ${state.weekly.nextWeek?'':'disabled'}>השבוע הבא${state.weekly.nextWeek?'':' · עוד לא תוכנן'}</button></div>`:'')+calendar;
+ }else main.innerHTML=weeklyPanel(state,plan,view)+renderMain({state:{...state,eventSeries:state.events,events:expandEvents(state.events,new Date(plan.weekStart+'T12:00:00'))},plan,view,selected,dates,today:localDate()});
  if(storageFailed)main.insertAdjacentHTML('afterbegin','<p class="storage-warning" role="alert">השמירה במכשיר אינה זמינה. כדאי להוריד גיבוי דרך ההעדפות לפני סגירת הדף.</p>');
  document.querySelectorAll('[data-view]').forEach(el=>{
   const active=el.dataset.view===view;el.classList.toggle('active',active);
@@ -72,7 +85,7 @@ function open(content){
 }
 function finishClose(){
  if(sheet.open)return;
- document.body.classList.remove('dialog-open');editing=null;addDrafts={};
+ document.body.classList.remove('dialog-open');editing=null;formDrafts={};
  const saved=returnFocus;returnFocus=null;restoreFocus(saved);
 }
 function close(){sheet.close();finishClose();}
@@ -158,14 +171,19 @@ function removeEvent(id,date){
 }
 document.addEventListener('click',event=>{
  const target=event.target.closest('button,a.brand');if(!target)return;
+ if(target.dataset.calendarMode){calendarMode=target.dataset.calendarMode==='month'?'month':'week';render();return;}
+ if(target.dataset.calendarMonth&&/^\d{4}-\d{2}$/.test(target.dataset.calendarMonth)){calendarMonth=target.dataset.calendarMonth;render();return;}
+ if(target.dataset.calendarScope){calendarScope=target.dataset.calendarScope;render();return;}
  if(target.matches('a.brand')){event.preventDefault();view='today';selected=localDate();render();return;}
- if(target.dataset.view){view=target.dataset.view;if(view==='today')selected=localDate();render();fadeIn();main.focus();return;}
+ if(target.dataset.view){view=target.dataset.view;if(view==='today')selected=localDate();render();fadeIn();main.focus();window.scrollTo(0,0);return;}
  if(target.dataset.date&&!target.dataset.action){selected=target.dataset.date;if(view==='week')view='today';render();fadeIn();return;}
  if(target.dataset.formTab){switchAdd(target.dataset.formTab);return;}
  if(target.dataset.minutes){sheet.querySelector('[name=minutes]').value=target.dataset.minutes;syncDuration();return;}
  const id=target.dataset.id;
  switch(target.dataset.action){
-  case 'add':showAdd();break;
+  case 'add':view='tasks';render();main.focus();window.scrollTo(0,0);break;
+  case 'add-fixed':showAdd('event');sheet.querySelector('.form-tabs').hidden=true;break;
+  case 'add-task':showAdd('task');sheet.querySelector('.form-tabs').hidden=true;break;
   case 'close':close();break;
   case 'settings':open(settingsForm(state.preferences));break;
   case 'restore-backup':if(pendingImport){mutate(()=>{state=pendingImport;},'הגיבוי שוחזר, כולל המטרות וההתקדמות.',true);pendingImport=null;close();}break;
@@ -272,6 +290,6 @@ document.addEventListener('change',async event=>{
 });
 const uiContext={getState:()=>state,getPlan:()=>plan,open,close,mutate,replace:value=>{state=value;},toast};
 const weeklyUI=setupWeeklyUI(uiContext);
-setupCoursesUI({...uiContext,addGoal:weeklyUI.addGoal});
+setupCoursesUI({...uiContext,addGoal:(courseId,topicId)=>{view='tasks';render();weeklyUI.addGoal(courseId,topicId);}});
 render();
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!sheet.open)render();});

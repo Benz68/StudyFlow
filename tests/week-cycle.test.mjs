@@ -1,43 +1,76 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {normalizeWeekly,buildWeeklyPlan,reviewAvailability,previewNextWeek,acceptNextWeek,adjustWeeklyPlan,releaseFlexibleSessions} from '../src/studyflow/weekly.mjs';
+import {normalizeWeekly,buildWeeklyPlan,reviewAvailability,previewNextWeek,acceptNextWeek,adjustWeeklyPlan,releaseFlexibleSessions,planningTarget,preparePlanningWeek,acceptPlanningWeek,currentPlanningState} from '../src/studyflow/weekly.mjs';
 
 const sunday=new Date(2026,9,11,8), saturday=new Date(2026,9,17,20);
 const initial=()=>({tasks:[],events:[],preferences:{startHour:9,endHour:21,maxDailyMinutes:240},...normalizeWeekly({
   goals:[{id:'math',title:'Math',category:'study',minutes:240,repeatWeekly:true},
     {id:'music',title:'Music',category:'personal',minutes:120,repeatWeekly:true}],weekly:{weekStart:'2026-10-11'}},sunday)});
 
-test('review opens Saturday at 20:00 local and remains available when missed',()=>{
-  const s=initial();
-  assert.equal(reviewAvailability(s,new Date(2026,9,17,19,59)).open,false);
-  assert.equal(reviewAvailability(s,saturday).open,true);
-  assert.equal(reviewAvailability(s,new Date(2026,9,19,9)).open,true);
-  assert.throws(()=>previewNextWeek(s,sunday),RangeError);
+test('one questionnaire targets current week until Saturday 19:00, then the next week',()=>{
+  assert.equal(planningTarget(new Date(2026,9,17,18,59)),'2026-10-11');
+  assert.equal(planningTarget(new Date(2026,9,17,19)),'2026-10-18');
+  assert.equal(planningTarget(new Date(2026,9,18,0)),'2026-10-18');
+  assert.equal(reviewAvailability(initial(),sunday).open,true);
+  assert.equal(preparePlanningWeek(initial(),sunday).weekly.weekStart,'2026-10-11');
 });
 
-test('review submits once, pending edits survive, third week is forbidden',()=>{
-  const s=initial(), future=previewNextWeek(s,saturday), accepted=acceptNextWeek(s,future,saturday);
-  assert.equal(reviewAvailability(accepted,saturday).submitted,true);
-  const withoutPending=structuredClone(accepted);delete withoutPending.weekly.nextWeek;
-  assert.equal(reviewAvailability(withoutPending,saturday).submitted,true);
-  assert.throws(()=>previewNextWeek(accepted,saturday),RangeError);
-  const edited=adjustWeeklyPlan({...s,...accepted.weekly.nextWeek},'shorter',saturday);
-  const updated=acceptNextWeek(accepted,edited,saturday);
-  assert.deepEqual(updated.weekly.nextWeek.weekly.reviews,accepted.weekly.nextWeek.weekly.reviews);
-  assert.equal(updated.weekly.nextWeek.goals[0].sessionMinutes,30);
-  assert.throws(()=>previewNextWeek({...s,...updated.weekly.nextWeek},saturday),RangeError);
+test('repeated edits are allowed, preserve reports, and cannot create a third week',()=>{
+  const s=initial();s.weekly.sessions=buildWeeklyPlan(s,sunday).retainedSessions;
+  const done=s.weekly.sessions.shift();s.weekly.completions=[{sessionId:done.id,goalId:done.goalId,date:done.date,start:done.start,end:done.end,minutes:Math.min(20,done.minutes)}];
+  let draft=preparePlanningWeek(s,sunday);draft.weekly.completions=[];
+  const first=acceptPlanningWeek(s,draft,sunday);
+  assert.deepEqual(first.weekly.completions,s.weekly.completions);
+  draft=preparePlanningWeek(first,sunday);draft.weekly.load='light';
+  const edited=acceptPlanningWeek(first,draft,sunday);assert.equal(edited.weekly.load,'light');
+  const future=preparePlanningWeek(edited,saturday),accepted=acceptPlanningWeek(edited,future,saturday);
+  assert.deepEqual(accepted.weekly.completions,s.weekly.completions);
+  assert.deepEqual(accepted.weekly.nextWeek.weekly.completions,[]);
+  assert.equal(accepted.weekly.nextWeek.goals.find(g=>g.id==='math').minutes,240);
+  const updated=acceptPlanningWeek(accepted,preparePlanningWeek(accepted,saturday),saturday);
+  assert.equal(updated.weekly.nextWeek.weekly.reviews.length,1);
   const third=structuredClone(future);third.weekly.weekStart='2026-10-25';
-  assert.throws(()=>acceptNextWeek(accepted,third,saturday),RangeError);
-  const promoted=normalizeWeekly(updated,new Date(2026,9,18,8));
-  assert.equal(promoted.weekly.weekStart,'2026-10-18');
-  assert.equal(reviewAvailability(promoted,new Date(2026,9,18,8)).open,false);
+  assert.throws(()=>acceptPlanningWeek(accepted,third,saturday),RangeError);
+  const promoted=preparePlanningWeek(updated,new Date(2026,9,18,8));assert.equal(promoted.weekly.weekStart,'2026-10-18');
 });
 
-test('late review skips empty calendar weeks without creating third-week chains',()=>{
-  const s=initial(), late=new Date(2026,10,2,8);
-  const future=previewNextWeek(s,late), accepted=acceptNextWeek(s,future,late);
-  assert.equal(accepted.weekly.weekStart,'2026-11-01');
-  assert.equal(reviewAvailability(accepted,late).open,false);
+test('stale dialogs reject a target change, while Sunday keeps the Saturday target',()=>{
+  const s=initial(), before=new Date(2026,9,17,18,59),after=new Date(2026,9,17,19);
+  assert.throws(()=>acceptPlanningWeek(s,preparePlanningWeek(s,before),after),RangeError);
+  const future=preparePlanningWeek(s,after);
+  assert.equal(acceptPlanningWeek(s,future,new Date(2026,9,18,8)).weekly.weekStart,'2026-10-18');
+  assert.throws(()=>acceptPlanningWeek(s,future,new Date(2026,9,24,19)),RangeError);
+});
+
+test('editing the current week preserves an independently prepared next week',()=>{
+  const s=initial(), future=preparePlanningWeek(s,saturday);
+  s.weekly.nextWeek=normalizeWeekly(future,saturday,true);
+  const edited=preparePlanningWeek(s,sunday);edited.weekly.load='heavy';
+  const accepted=acceptPlanningWeek(s,edited,sunday);
+  assert.deepEqual(accepted.weekly.nextWeek,s.weekly.nextWeek);
+  const stale=structuredClone(s);stale.weekly.weekStart='2026-10-04';
+  assert.deepEqual(currentPlanningState(stale,sunday).weekly.nextWeek,s.weekly.nextWeek);
+});
+
+test('late return resets old placements and retains current course metadata on promotion',()=>{
+  const s=initial();s.weekly.sessions=buildWeeklyPlan(s,sunday).retainedSessions;
+  const late=new Date(2026,10,2,8),fresh=currentPlanningState(s,late);
+  assert.equal(fresh.weekly.weekStart,'2026-11-01');
+  assert.ok(fresh.weekly.sessions.every(x=>x.date>='2026-11-01'));
+  const accepted=acceptPlanningWeek(s,preparePlanningWeek(s,saturday),saturday);
+  accepted.courses=[{id:'c',name:'Latest',topics:[],difficulty:3}];
+  assert.equal(currentPlanningState(accepted,new Date(2026,9,18,8)).courses[0].name,'Latest');
+  assert.equal(currentPlanningState(s,new Date(2026,10,7,20)).weekly.weekStart,'2026-11-01');
+});
+
+test('fresh rollover at 15:00 never invents missed morning sessions',()=>{
+  const now=new Date(2026,9,18,15),s=initial();
+  const fresh=currentPlanningState(s,now);
+  assert.ok(fresh.weekly.sessions.length>0);
+  assert.ok(fresh.weekly.sessions.every(x=>x.date>'2026-10-18'||x.date==='2026-10-18'&&x.start>='15:00'));
+  const approved=acceptPlanningWeek(s,preparePlanningWeek(s,saturday),saturday);
+  const expected=approved.weekly.nextWeek.weekly.sessions;
+  assert.deepEqual(currentPlanningState(approved,now).weekly.sessions,expected);
 });
 
 test('adjustments preserve locked placements and redistribute without inflating total goals',()=>{
