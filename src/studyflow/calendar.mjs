@@ -47,22 +47,35 @@ export function calendarPlacements(items) {
 }
 
 function modeControls(mode) {
-  return `<div class="calendar-modes" role="group" aria-label="תצוגת היומן"><button data-calendar-mode="week" aria-pressed="${mode==='week'}">שבוע</button><button data-calendar-mode="month" aria-pressed="${mode==='month'}">חודש · זמנים קבועים</button></div>`;
+  return `<div class="calendar-modes" role="group" aria-label="תצוגת היומן"><button data-calendar-mode="week" aria-pressed="${mode==='week'}">שבוע</button><button data-calendar-mode="month" aria-pressed="${mode==='month'}">חודש</button></div>`;
 }
 function itemAction(item) {
   return item.fixed ? `data-action="edit-event" data-id="${escape(item.id)}"` : item.goalId ? `data-weekly="move" data-id="${escape(item.id)}"` : `data-action="edit-task" data-id="${escape(item.taskId)}"`;
 }
+// Each course / goal gets its own soft color, so the week is easy to read at a glance.
+const PALETTE = [['#e6f0ec','#3f8f84'],['#e5edf6','#4f7cae'],['#eee8f5','#7d62a8'],['#fbebdc','#c9772f'],['#f8e6ea','#c25a76'],['#f3efd6','#a68c1c'],['#e3f0f4','#2f8aa0']];
+function colorKeys(state,items){
+  const keys=[];
+  for(const item of items){ if(item.fixed)continue; const key=colorKey(state,item); if(!keys.some(k=>k.key===key.key))keys.push(key); }
+  return keys.map((k,i)=>({...k,color:PALETTE[i%PALETTE.length]}));
+}
+function colorKey(state,item){
+  const goal=(state.goals||[]).find(g=>g.id===item.goalId);
+  const course=goal?.courseId&&(state.courses||[]).find(c=>c.id===goal.courseId);
+  return course?{key:`course:${course.id}`,label:course.name}:{key:item.goalId?`goal:${item.goalId}`:`task:${item.taskId}`,label:goal?.title||item.title};
+}
+const colorStyle=(keys,state,item)=>{ if(item.fixed)return ''; const k=keys.find(k=>k.key===colorKey(state,item).key); return k?`--ev-bg:${k.color[0]};--ev-accent:${k.color[1]};`:''; };
 const shortDay = date => dateObject(date).toLocaleDateString('he-IL',{weekday:'short'});
 const kindLabel = item => item.fixed ? 'זמן קבוע' : item.locked ? 'מטרה נעולה' : 'מטרה';
 // On phones the week (and month) is shown as a simple list, day after day.
-function agenda(dates,items,today,{skipEmpty=false}={}) {
+function agenda(dates,items,today,{skipEmpty=false,colors=()=>''}={}) {
   const tomorrow=shift(today,1);
   const blocks=dates.map(date=>{
     const list=items.filter(item=>item.date===date).sort((a,b)=>a.start.localeCompare(b.start));
     // Empty days that already passed only take room, so they're left out.
     if(!list.length&&(skipEmpty||date<today))return '';
     const name=date===today?'היום':date===tomorrow?'מחר':dayLabel(date);
-    return `<section class="agenda-day-block ${date===today?'is-today':''}"><h3><span>${name}</span><small>${dayLabel(date)===name?'':dayLabel(date)+' · '}${dateLabel(date)}</small></h3>${list.length?list.map(item=>`<button class="agenda-entry ${item.fixed?'is-fixed':'is-goal'}" ${itemAction(item)} aria-label="${escape(`${item.title}, ${item.start}–${item.end}, ${kindLabel(item)}`)}"><bdi>${item.start}<small>${item.end}</small></bdi><span><strong>${escape(item.title)}</strong><em>${kindLabel(item)}</em></span></button>`).join(''):'<p class="agenda-free">יום פנוי</p>'}</section>`;
+    return `<section class="agenda-day-block ${date===today?'is-today':''}"><h3><span>${name}</span><small>${dayLabel(date)===name?'':dayLabel(date)+' · '}${dateLabel(date)}</small></h3>${list.length?list.map(item=>`<button class="agenda-entry ${item.fixed?'is-fixed':'is-goal'}" style="${colors(item)}" ${itemAction(item)} aria-label="${escape(`${item.title}, ${item.start}–${item.end}, ${kindLabel(item)}`)}"><bdi>${item.start}<small>${item.end}</small></bdi><span><strong>${escape(item.title)}</strong><em>${kindLabel(item)}</em></span></button>`).join(''):'<p class="agenda-free">יום פנוי</p>'}</section>`;
   }).join('');
   return `<div class="calendar-agenda">${blocks||'<p class="agenda-free">אין התחייבויות קבועות בחודש הזה.</p>'}</div>`;
 }
@@ -73,10 +86,10 @@ function weekly(state,plan,start) {
   const from=Math.min(8*60,...valid.map(item=>Math.floor(minutes(item.start)/60)*60));
   const to=Math.max(21*60,...valid.map(item=>Math.ceil(minutes(item.end)/60)*60));
   const height=(to-from)*1.2, hours=Array.from({length:(to-from)/60+1},(_,index)=>from+index*60);
-  const today=localDate();
-  return `<div class="calendar-summary"><p class="calendar-range">${dateLabel(start)} – ${dateLabel(dates[6])}</p><div class="calendar-legend"><span class="calendar-key fixed">זמן קבוע</span><span class="calendar-key goal">מטרה / זמן לקורס</span></div></div><p class="calendar-caption">לחיצה על מפגש פותחת אותו לעריכה.</p>${agenda(dates,valid,today)}<p class="calendar-scroll-hint">אפשר לגלול לצדדים כדי לראות את כל השבוע.</p><div class="calendar-scroll" tabindex="0" role="region" aria-label="יומן שבועי, ימים ושעות"><div class="calendar-week"><div class="calendar-corner">שעה</div>${dates.map(date=>`<div class="calendar-day-heading ${date===today?'is-today':''}" aria-label="${dayLabel(date)}, ${dateLabel(date)}"><b>${shortDay(date)}</b><span>${dateObject(date).getDate()}</span></div>`).join('')}<div class="calendar-hours" style="height:${height}px">${hours.map(hour=>`<span style="top:${(hour-from)*1.2}px">${clock(hour)}</span>`).join('')}</div>${dates.map(date=>`<section class="calendar-day ${date===today?'is-today':''}" aria-label="${dayLabel(date)}, ${dateLabel(date)}" style="height:${height}px">${calendarPlacements(valid.filter(item=>item.date===date)).map(item=>{
+  const today=localDate(), keys=colorKeys(state,valid);
+  return `<div class="calendar-summary"><p class="calendar-range">${dateLabel(start)} – ${dateLabel(dates[6])}</p><div class="calendar-legend"><span class="calendar-key fixed">זמן קבוע</span>${keys.map(k=>`<span class="calendar-key" style="--ev-accent:${k.color[1]}">${escape(k.label)}</span>`).join('')}</div></div><p class="calendar-caption">לחיצה על מפגש פותחת אותו לעריכה.</p>${agenda(dates,valid,today,{colors:item=>colorStyle(keys,state,item)})}<p class="calendar-scroll-hint">אפשר לגלול לצדדים כדי לראות את כל השבוע.</p><div class="calendar-scroll" tabindex="0" role="region" aria-label="יומן שבועי, ימים ושעות"><div class="calendar-week"><div class="calendar-corner">שעה</div>${dates.map(date=>`<div class="calendar-day-heading ${date===today?'is-today':''}" aria-label="${dayLabel(date)}, ${dateLabel(date)}"><b>${shortDay(date)}</b><span>${dateObject(date).getDate()}</span></div>`).join('')}<div class="calendar-hours" style="height:${height}px">${hours.map(hour=>`<span style="top:${(hour-from)*1.2}px">${clock(hour)}</span>`).join('')}</div>${dates.map(date=>`<section class="calendar-day ${date===today?'is-today':''}" aria-label="${dayLabel(date)}, ${dateLabel(date)}" style="height:${height}px">${calendarPlacements(valid.filter(item=>item.date===date)).map(item=>{
     const title=`${item.title}, ${item.start}–${item.end}, ${item.fixed?'זמן קבוע':item.locked?'מטרה נעולה':'מטרה גמישה'}`;
-    return `<button class="calendar-event ${item.fixed?'is-fixed':'is-goal'} ${item.to-item.from<30?'is-compact':''}" ${itemAction(item)} aria-label="${escape(title)}" title="${escape(title)}" style="top:${(item.from-from)*1.2}px;height:${(item.to-item.from)*1.2}px;inset-inline-start:calc(${item.lane*100/item.lanes}% + 2px);width:calc(${100/item.lanes}% - 4px)"><strong>${escape(item.title)}</strong><bdi>${item.start}–${item.end}</bdi>${item.locked?'<span class="calendar-locked">נעול</span>':''}</button>`;
+    return `<button class="calendar-event ${item.fixed?'is-fixed':'is-goal'} ${item.to-item.from<30?'is-compact':''}" ${itemAction(item)} aria-label="${escape(title)}" title="${escape(title)}" style="${colorStyle(keys,state,item)}top:${(item.from-from)*1.2}px;height:${(item.to-item.from)*1.2}px;inset-inline-start:calc(${item.lane*100/item.lanes}% + 2px);width:calc(${100/item.lanes}% - 4px)"><strong>${escape(item.title)}</strong><bdi>${item.start}–${item.end}</bdi>${item.locked?'<span class="calendar-locked">נעול</span>':''}</button>`;
   }).join('')}</section>`).join('')}</div></div>`;
 }
 function monthStep(month,direction){const date=dateObject(`${month}-01`);date.setMonth(date.getMonth()+direction);return localDate(date).slice(0,7);}

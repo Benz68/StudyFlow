@@ -77,3 +77,9 @@
  .agenda-day-block.is-today h3 span{font-family:inherit;font-size:14px;line-height:1.6;background:var(--ink);color:#fff;border-radius:999px;padding:0 12px}
  .agenda-day-block:not(.is-today) .agenda-entry{opacity:1}
 }
+/* Per-course / per-goal colors; fixed time looks "blocked" with soft stripes */
+.calendar-event.is-goal{background:var(--ev-bg,#e6f0ec);border-inline-start-color:var(--ev-accent,#3f8f84);color:#2d2a26}
+.calendar-event.is-fixed{background:repeating-linear-gradient(135deg,#f1eadf 0 8px,#ebe2d3 8px 16px)}
+.calendar-key:not(.fixed):before{background:var(--ev-accent,#3f8f84)}
+.calendar-summary .calendar-legend{max-width:100%}
+@media(max-width:650px){.agenda-entry.is-goal{border-inline-start-color:var(--ev-accent,#3f8f84);background:linear-gradient(90deg,var(--card,#fffdf6) 70%,var(--ev-bg,#e6f0ec))}}

@@ -118,3 +118,10 @@ test('whole week unavailable yields exact deficit; delayed return skips stale we
   assert.equal(p.sessions.length,0);assert.equal(p.unscheduled[0].minutes,300);
   assert.equal(previewNextWeek(s,new Date(2026,10,2,8)).weekly.weekStart,'2026-11-01');
 });
+
+test('sessions of one goal spread over different days instead of back to back',()=>{
+  const state={events:[],tasks:[],courses:[],preferences:{},goals:[{id:'gym',title:'אימון',minutes:100,category:'personal',sessionMinutes:50,repeatWeekly:true}],weekly:{weekStart:'2026-10-11'}};
+  const plan=buildWeeklyPlan(state,new Date(2026,9,11,7));
+  const days=plan.sessions.filter(s=>s.goalId==='gym').map(s=>s.date);
+  assert.equal(days.length,2);assert.equal(new Set(days).size,2,'two different days');
+});

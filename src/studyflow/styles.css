@@ -532,3 +532,48 @@ input[type=time]::-webkit-date-and-time-value{text-align:right}
  .hub-step{padding:16px}
 }
 @media(max-width:650px){.task-item{flex-wrap:wrap;row-gap:2px}.task-item>div{flex:1 1 60%}.task-item>.edit-task{margin-inline-start:auto}}
+/* ── Questionnaire: clear choice cards ── */
+.wizard-q{font-size:15px;font-weight:600;margin:18px 0 8px}
+.wizard-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.wizard-cards span{min-height:64px;padding:10px 12px;border-radius:16px;font-weight:600}
+.wizard-cards small{font-weight:400;margin-top:4px;line-height:1.4}
+.choice-chips input:checked+span{background:var(--teal-soft);border-color:#e3b3a3;color:var(--teal)}
+.wizard-suggest{background:#faf6ec;border-radius:14px;padding:10px 14px;margin-top:12px}
+.wizard-suggest .text-button{font-weight:600;padding-inline:0}
+.wizard-suggest small{margin-top:2px}
+
+/* ── Plan preview: day by day, one color per goal ── */
+.preview-how{font-size:14px;color:var(--muted);line-height:1.6;margin:8px 0 12px}
+.weekly-preview{display:grid;gap:12px;max-height:46vh;overflow:auto;padding-inline-end:4px}
+.preview-day h3{font-size:15px;font-weight:700;margin:0 0 6px}
+.preview-item{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);border-inline-start:4px solid var(--ev-accent,#3f8f84);border-radius:12px;padding:8px 12px;margin-bottom:6px}
+.preview-item bdi{font-size:13px;color:var(--muted);min-width:92px;font-variant-numeric:tabular-nums}
+.preview-item b{flex:1;font-size:15px;font-weight:600;min-width:0;overflow-wrap:anywhere}
+.preview-item small{font-size:12px;color:var(--muted)}
+.preview-move{font-size:13px;min-height:34px;padding:4px 8px}
+
+/* ── Bar above the calendar ── */
+.weekly-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:6px 0 4px}
+.weekly-bar-button{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--card);border-radius:999px;padding:8px 16px;min-height:44px;font-size:14px;color:var(--ink)}
+.weekly-bar-button .icon{width:16px;height:16px}
+.weekly-bar-button.is-unexpected{border-color:#e8c6b8;color:#a8452f;background:#fdf1ec}
+@media(hover:hover){.weekly-bar-button:hover{background:var(--hover-fill)}.weekly-bar-button.is-unexpected:hover{background:#f9e3da}}
+@media(max-width:650px){.weekly-bar{display:grid;grid-template-columns:1fr 1fr}.weekly-bar .primary{grid-column:1/-1}.weekly-bar-button{justify-content:center;padding:8px 10px;font-size:13px}}
+
+/* ── A goal's page: progress + personal journal ── */
+.goal-progress{background:#fff;border:1px solid var(--line);border-radius:18px;padding:14px 16px;margin-bottom:6px}
+.goal-progress-top{display:flex;justify-content:space-between;font-size:14px;color:var(--muted);margin-bottom:8px}
+.goal-progress-top b{color:var(--ink)}
+.goal-progress .field-help{margin-top:8px}
+.feel-chips span{font-size:22px;min-width:84px}
+.feel-chips small{font-size:12px}
+.goal-journal-form label[for=journal-text]{display:block;font-size:14px;font-weight:600;margin:16px 0 8px}
+#journal-text{width:100%;border:1px solid #ddd2bf;background:#fff;border-radius:14px;padding:12px;font:inherit;font-size:16px;line-height:1.6;resize:vertical;min-height:84px}
+#journal-text:focus{outline:none;border-color:#c9b99c}
+.goal-journal{margin-top:20px}
+.goal-journal h3{font-family:'Amatic SC',Heebo,sans-serif;font-size:26px;font-weight:700;margin-bottom:8px}
+.goal-journal article{background:#faf6ec;border-radius:14px;padding:10px 14px;margin-bottom:8px}
+.goal-journal header{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--muted);margin-bottom:4px}
+.goal-journal header span{font-size:18px}
+.goal-journal p{font-size:15px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+.goal-edit-link{display:block;margin:14px auto 0}

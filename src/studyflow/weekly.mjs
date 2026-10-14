@@ -31,6 +31,7 @@ export function normalizeWeekly(value = {}, now = new Date(), nested = false) {
     weekStart: validDate(x.weekStart) ? weekStart(x.weekStart) : start,
     preferredTime: choice(x.preferredTime, ['any', 'morning', 'afternoon', 'evening'], 'any'),
     sessionMinutes: bounded(x.sessionMinutes, 50, 15, 180),
+    journal: list(x.journal).slice(-200).filter(e => e && validDate(e.date) && clean(e.text, 2000)).map(e => ({date: e.date, text: clean(e.text, 2000), feel: choice(e.feel, ['good', 'ok', 'hard'], 'ok')})),
   })));
   const sessions = unique(list(w.sessions).slice(0, 2000).filter(x => x && clean(x.id) && validDate(x.date)
     && timeMinutes(x.start) !== null && timeMinutes(x.end) > timeMinutes(x.start)).map(x => ({
@@ -164,7 +165,9 @@ export function buildWeeklyPlan(input, now = new Date()) {
           const ideal = pref === 'evening' ? 1080 : pref === 'afternoon' ? 840 : 600;
           const dayGoals = sessions.filter(s=>s.date===date).map(s=>s.goalId || s.taskId);
           const switching = w.fewerSwitches && dayGoals.length && !dayGoals.includes(g.id) ? 450 : 0;
-          const score = (fallback ? 10000 : 0) + switching + (Math.min(left,want)-size)*3 + used.get(date)*3 + Math.abs(a-ideal)/5 + dates.indexOf(date)*2;
+          // Spread a goal across the week: a second session of the same goal on one day is a last resort.
+          const repeats = w.fewerSwitches ? 0 : dayGoals.filter(id=>id===g.id).length*700;
+          const score = (fallback ? 10000 : 0) + switching + repeats + (Math.min(left,want)-size)*3 + used.get(date)*3 + Math.abs(a-ideal)/5 + dates.indexOf(date)*2;
           candidates.push({s,score});
         }
       }
