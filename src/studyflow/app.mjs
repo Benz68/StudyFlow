@@ -15,6 +15,9 @@ let state=loadState(), plan, view='today', selected=localDate(), undoState=null;
 let realState=null, editing=null, returnFocus=null, toastTimer, storageFailed=false, pendingImport=null;
 let calendarMode='week',calendarMonth=localDate().slice(0,7),calendarScope='current';
 const app=document.querySelector('#app');
+// The focus frame is for keyboard users; hide it after mouse or touch so it doesn't linger on buttons.
+document.addEventListener('pointerdown',()=>document.documentElement.classList.add('using-pointer'),true);
+document.addEventListener('keydown',event=>{if(event.key==='Tab')document.documentElement.classList.remove('using-pointer');},true);
 app.innerHTML=shell();document.body.classList.add('no-helper');
 const sheet=document.querySelector('#sheet');
 const main=document.querySelector('#main');

@@ -455,3 +455,6 @@ button{transition:background .2s var(--ease),color .2s var(--ease),box-shadow .2
  #add-form .submit-button,#settings-form .submit-button,.helper-add{position:sticky;bottom:0;z-index:2;box-shadow:0 -14px 14px -4px #fffdf6}
  .form-footnote{display:none}
 }
+/* No focus frame for mouse and touch users; keyboard users get a calm ink frame instead of orange */
+.using-pointer :focus-visible,.using-pointer :focus-visible+span{outline:none!important}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible,.off-days input:focus-visible+span,.choice-chips input:focus-visible+span{outline-color:var(--ink)}
