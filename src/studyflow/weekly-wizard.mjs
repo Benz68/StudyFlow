@@ -118,7 +118,7 @@ export function setupWeeklyWizard(ctx){
    }
    case 'undo':if(history.length){draft=history.pop();explanation='חזרנו להצעה הקודמת.';showPreview();}break;
    case 'approve':{const next=questionnaire?acceptPlanningWeek(getState(),draft):future?acceptNextWeek(getState(),draft):draft;mutate(()=>replace(next),'התוכנית אושרה. אפשר לערוך אותה בכל רגע.',true);close();break;}
-   case 'move':{const s=draft.weekly.sessions.find(s=>s.id===b.dataset.id);if(!s)break;open(`${heading('מתי מתאים לך?')}<form id="wizard-move" data-id="${esc(s.id)}"><label>תאריך<input name="date" type="date" value="${s.date}" required></label><label>שעה<input name="start" type="time" value="${s.start}" required></label><p role="alert"></p><button class="primary" type="submit">להעביר ולנעול</button><button type="button" class="text-button" data-wizard="preview">חזרה</button></form>`);break;}
+   case 'move':{const s=draft.weekly.sessions.find(s=>s.id===b.dataset.id);if(!s)break;open(`${heading('מתי מתאים לך?')}<form id="wizard-move" data-id="${esc(s.id)}"><label>תאריך<input name="date" type="hidden" data-picker value="${s.date}"></label><label>שעה<input name="start" type="time" value="${s.start}" required></label><p role="alert"></p><button class="primary" type="submit">להעביר ולנעול</button><button type="button" class="text-button" data-wizard="preview">חזרה</button></form>`);break;}
   }}catch(e){toast(e.message);}
  });
  return {start,preview,startPlanning(){questionnaire=true;const value=preparePlanningWeek(getState());start(value,value.weekly.weekStart>getState().weekly.weekStart);},adjustCurrent(){questionnaire=false;draft=clone(getState());future=false;history=[];explanation='';adjustMenu();}};

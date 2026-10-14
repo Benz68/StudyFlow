@@ -63,7 +63,12 @@ export function parseSpeech(sentence, now = new Date()) {
   setDate(iso(d), m[1]);
  });
  take(/(?:^|\s)(עד\s+)?(?:ל?)(מחרתיים|מחר|היום)(?=\s|$|[,.])/g, m => setDate(iso(addDays(today, {'היום': 0, 'מחר': 1, 'מחרתיים': 2}[m[2]])), m[1]));
- take(/(?:^|\s)(עד\s+)?(?:ב?יום\s+|ב)(ראשון|שני|שלישי|רביעי|חמישי|שישי|שבת)(?=\s|$|[,.])/g, m => setDate(iso(nextWeekday(today, DAYS[m[2]])), m[1]));
+ take(/(?:^|\s)(עד\s+)?(?:ב?יום\s+|ב)(ראשון|שני|שלישי|רביעי|חמישי|שישי|שבת)(\s+(?:הבא|הקרוב|הזה))?(?=\s|$|[,.])/g, m => {
+  // "יום שני הבא" said on a Monday means next week's Monday.
+  let day = nextWeekday(today, DAYS[m[2]]);
+  if (m[3]?.includes('הבא') && iso(day) === iso(today)) day = addDays(day, 7);
+  setDate(iso(day), m[1]);
+ });
 
  // How long it takes ("שעתיים", "שעה וחצי", "45 דקות").
  take(/(?:^|\s)(?:במשך\s+)?(?:(\d+)\s+שעות(\s+וחצי)?|שעתיים(\s+וחצי)?|שעה(\s+וחצי)|(?<!ב)שעה(?!\s*-?\d)|חצי שעה|רבע שעה|(\d+)\s+דקות)(?=\s|$|[,.])/g, m => {

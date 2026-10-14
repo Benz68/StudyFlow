@@ -40,3 +40,9 @@ test('words that only look like numbers or days stay in the name', () => {
  assert.equal(parseSpeech('שני ספרים לספרייה', now).title, 'שני ספרים לספרייה');
  assert.equal(parseSpeech('ישיבת צוות בשבוע הבא', now).title, 'ישיבת צוות');
 });
+
+test('"הבא" after a weekday is part of the date, not the name', () => {
+ assert.deepEqual(pick('ללמוד מתמטיקה ביום שני הבא משעה אחת עד שלוש', ['title', 'date', 'start', 'end']),
+  {title: 'ללמוד מתמטיקה', date: '2026-10-19', start: '13:00', end: '15:00'});
+ assert.equal(parseSpeech('פגישה ביום רביעי הבא', now).date, '2026-10-21');
+});

@@ -15,18 +15,25 @@ export function enhanceDates(root) {
  root.querySelectorAll('input[data-picker]').forEach(input => input.picker ? input.picker.sync() : build(input));
 }
 
+// Builds pickers for date fields as soon as any pop-up shows them (only new fields, so it can't loop).
+export function watchDates(root) {
+ const attach = () => root.querySelectorAll('input[data-picker]').forEach(input => { if (!input.picker) build(input); });
+ attach();
+ new MutationObserver(attach).observe(root, {childList: true, subtree: true});
+}
+
 function build(input) {
  const box = document.createElement('div');
  box.className = 'date-picker';
- const buttonId = `${input.id}-button`;
- box.innerHTML = `<button type="button" class="date-display" id="${buttonId}" aria-expanded="false">${icon('week')}<span class="date-text"></span><span class="date-change">שינוי</span></button>${input.dataset.quick !== undefined ? '<div class="date-quick"></div>' : ''}<div class="date-cal" hidden><div class="date-cal-head"><button type="button" class="icon-button date-prev" aria-label="החודש הקודם">${icon('arrow')}</button><b class="date-month" aria-live="polite"></b><button type="button" class="icon-button date-next" aria-label="החודש הבא">${icon('arrow')}</button></div><div class="date-grid" role="grid"></div></div>`;
+ const buttonId = `${input.id || `date-${Math.random().toString(36).slice(2, 8)}`}-button`;
+ box.innerHTML = `<button type="button" class="date-display" id="${buttonId}" aria-expanded="false">${icon('week')}<span class="date-text"></span><span class="date-change">שינוי</span></button>${input.dataset.optional !== undefined ? '<button type="button" class="text-button date-clear">בלי תאריך</button>' : ''}${input.dataset.quick !== undefined ? '<div class="date-quick"></div>' : ''}<div class="date-cal" hidden><div class="date-cal-head"><button type="button" class="icon-button date-prev" aria-label="החודש הקודם">${icon('arrow')}</button><b class="date-month" aria-live="polite"></b><button type="button" class="icon-button date-next" aria-label="החודש הבא">${icon('arrow')}</button></div><div class="date-grid" role="grid"></div></div>`;
  input.after(box);
  input.closest('form')?.querySelector(`label[for="${input.id}"]`)?.setAttribute('for', buttonId);
  const display = box.querySelector('.date-display'), cal = box.querySelector('.date-cal'), quick = box.querySelector('.date-quick');
  let month = null;
 
- const min = () => parse(input.getAttribute('min'));
- const allowed = date => { const m = min(); return !m || iso(date) >= iso(m); };
+ const min = () => parse(input.getAttribute('min')), max = () => parse(input.getAttribute('max'));
+ const allowed = date => { const m = min(), x = max(); return (!m || iso(date) >= iso(m)) && (!x || iso(date) <= iso(x)); };
  function choose(date) {
   input.value = iso(date);
   input.dispatchEvent(new Event('change', {bubbles: true}));
@@ -39,6 +46,8 @@ function build(input) {
   box.querySelector('.date-month').textContent = month.toLocaleDateString('he-IL', {month: 'long', year: 'numeric'});
   const m = min();
   box.querySelector('.date-prev').disabled = !!m && new Date(month.getFullYear(), month.getMonth(), 0) < m;
+  const x = max();
+  box.querySelector('.date-next').disabled = !!x && new Date(month.getFullYear(), month.getMonth() + 1, 1) > x;
   const first = new Date(month), start = addDays(first, -first.getDay()), value = input.value, now = iso(today());
   let html = DAYS.map(d => `<span class="dow">${d}</span>`).join('');
   for (let i = 0; i < 42; i++) {
@@ -51,7 +60,9 @@ function build(input) {
 
  function sync() {
   const v = parse(input.value);
-  box.querySelector('.date-text').textContent = v ? v.toLocaleDateString('he-IL', {weekday: 'long', day: 'numeric', month: 'long', ...(v.getFullYear() !== today().getFullYear() && {year: 'numeric'})}) : 'בחירת תאריך';
+  box.querySelector('.date-text').textContent = v ? v.toLocaleDateString('he-IL', {weekday: 'long', day: 'numeric', month: 'long', ...(v.getFullYear() !== today().getFullYear() && {year: 'numeric'})}) : input.dataset.optional !== undefined ? 'בלי תאריך' : 'בחירת תאריך';
+  const clear = box.querySelector('.date-clear');
+  if (clear) clear.hidden = !input.value;
   if (quick) quick.innerHTML = QUICK.filter(([, n]) => allowed(addDays(today(), n))).map(([label, n]) => `<button type="button" data-offset="${n}" class="${iso(addDays(today(), n)) === input.value ? 'active' : ''}">${label}</button>`).join('');
   if (!cal.hidden) drawMonth();
  }
@@ -63,6 +74,7 @@ function build(input) {
   const day = event.target.closest('[data-day]'), offset = event.target.closest('[data-offset]');
   if (day && !day.disabled) choose(parse(day.dataset.day));
   else if (offset) choose(addDays(today(), Number(offset.dataset.offset)));
+  else if (event.target.closest('.date-clear')) { input.value = ''; input.dispatchEvent(new Event('change', {bubbles: true})); close(); sync(); }
  });
  input.picker = {sync};
  sync();

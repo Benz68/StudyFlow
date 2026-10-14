@@ -56,7 +56,7 @@ export function setupCoursesUI(ctx) {
     open(`${heading(course.id ? 'עריכת קורס' : 'קורס חדש')}<form id="course-edit" data-id="${esc(id || '')}">
       <label for="course-name">שם הקורס</label><input id="course-name" name="name" maxlength="120" value="${esc(course.name || '')}" required autofocus placeholder="למשל, סטטיסטיקה א׳">
       <fieldset><legend>איך הולך בקורס?</legend>${radios('difficulty', [[1, 'הולך בקלות'], [2, 'צריך תרגול'], [3, 'מאתגר', 'מפגשים קצרים יותר']], course.difficulty || 2)}</fieldset>
-      <label for="course-exam">מתי המבחן? (לא חובה)</label><input id="course-exam" name="examDate" type="date" value="${esc(course.examDate || '')}"><small class="field-help">כשהמבחן מתקרב, הקורס יקבל עדיפות בתכנון.</small>
+      <label for="course-exam">מתי המבחן? (לא חובה)</label><input id="course-exam" name="examDate" type="hidden" data-picker data-optional value="${esc(course.examDate || '')}"><small class="field-help">כשהמבחן מתקרב, הקורס יקבל עדיפות בתכנון.</small>
       ${error}<button class="primary submit-button">${course.id ? 'לשמור שינויים' : 'להוסיף קורס'}</button></form>`);
   }
   function topics(id) {

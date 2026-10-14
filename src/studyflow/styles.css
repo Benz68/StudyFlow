@@ -491,3 +491,44 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 .voice-filled-note{background:var(--teal-soft);color:var(--teal);border-radius:12px;padding:10px 14px;font-size:14px;line-height:1.6;margin-bottom:8px}
 .just-filled{animation:just-filled 1.6s ease-out;border-radius:14px}
 @keyframes just-filled{0%,40%{box-shadow:0 0 0 3px #e8743b66}100%{box-shadow:0 0 0 0 transparent}}
+.date-clear{display:inline-flex;margin-top:6px;font-size:13px}
+.date-clear[hidden]{display:none}
+.date-cal-head .icon-button:disabled{opacity:.3}
+/* Pop-ups never move sideways on phones */
+dialog{overflow-x:hidden;overscroll-behavior:contain;touch-action:pan-y}
+dialog form,dialog .form-row>div{min-width:0}
+.form-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+input[type=time],input[type=number]{min-width:0;max-width:100%;-webkit-appearance:none;appearance:none}
+input[type=time]::-webkit-date-and-time-value{text-align:right}
+.voice-filled-note,.voice-screen,.date-picker{max-width:100%}
+.section-heading .eyebrow{display:block;margin-bottom:2px}
+/* ── התכנון שלי: one week card, then four clear steps ── */
+.hub-hero{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px 20px;background:var(--card);border:1px solid var(--line);border-radius:22px;padding:20px 22px;box-shadow:0 1px 1px #0000000a,0 10px 18px -12px #00000033;margin-bottom:22px}
+.hub-hero .eyebrow{display:block;font-size:13px}
+.hub-hero h2{font-size:22px;font-weight:700;margin:2px 0 4px}
+.hub-hero p{font-size:14px;color:var(--muted);margin:0}
+.hub-hero small{grid-column:1/-1;font-size:12px;color:var(--faint);line-height:1.6}
+.hub-steps{list-style:none;padding:0;margin:0;display:grid;gap:14px}
+.hub-step{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:18px 20px 16px;box-shadow:0 8px 14px -12px #00000033}
+.hub-step-head{display:flex;align-items:center;gap:12px}
+.hub-num{flex-shrink:0;width:34px;height:34px;display:grid;place-items:center;border:2px solid var(--ink);border-radius:46% 54% 50% 50%/55% 45% 55% 45%;font-weight:700;font-size:15px}
+.hub-step h2{font-size:18px;font-weight:700;margin:0;line-height:1.3}
+.hub-tag{display:inline-block;font-size:12px;color:var(--muted);margin-top:2px}
+.hub-step.is-fixed .hub-tag{color:#8a7357}
+.hub-step.is-flex .hub-tag{color:#3f8f84}
+.hub-desc{font-size:14px;color:var(--muted);line-height:1.6;margin:8px 0 10px}
+.hub-empty{font-size:14px;color:var(--faint);background:#faf6ec;border-radius:14px;padding:10px 14px;margin:0}
+.hub-step .commitments{margin:0}
+.hub-step .commitments>.section-heading{display:none}
+.hub-step .task-list,.hub-step .commitments{display:grid;gap:8px}
+.hub-step .task-item{box-shadow:none;background:#fff;margin:0}
+.hub-step .task-list>.day-empty{display:none}
+.hub-add{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:12px;padding:10px 14px;min-height:46px;border:1.5px dashed #d8ccb6;border-radius:14px;color:var(--teal);font-weight:600;font-size:15px}
+.hub-add .icon{width:18px;height:18px}
+@media(hover:hover){.hub-add:hover{background:var(--hover-fill);border-style:solid}}
+@media(max-width:650px){
+ .hub-hero{grid-template-columns:1fr;padding:18px}
+ .hub-hero .primary{width:100%}
+ .hub-step{padding:16px}
+}
+@media(max-width:650px){.task-item{flex-wrap:wrap;row-gap:2px}.task-item>div{flex:1 1 60%}.task-item>.edit-task{margin-inline-start:auto}}

@@ -4,7 +4,7 @@ import {shell,renderMain,icon,duration} from './views.mjs';
 import {addForm,settingsForm,proContent} from './forms.mjs';
 import {celebrateCompletion} from './motion.mjs';
 import {startTour} from './tour.mjs';
-import {enhanceDates} from './datepicker.mjs';
+import {enhanceDates,watchDates} from './datepicker.mjs';
 import {buildWeeklyPlan,normalizeWeekly,currentPlanningState} from './weekly.mjs';
 import {renderCourses,setupCoursesUI} from './courses-ui.mjs';
 import {weeklyPanel,setupWeeklyUI} from './weekly-ui.mjs';
@@ -22,6 +22,7 @@ document.addEventListener('keydown',event=>{if(event.key==='Tab')document.docume
 app.innerHTML=shell();document.body.classList.add('no-helper');
 const sheet=document.querySelector('#sheet');
 enableVoice(sheet);
+watchDates(sheet);
 const main=document.querySelector('#main');
 const clone=value=>JSON.parse(JSON.stringify(value));
 document.documentElement.dataset.inputModality='pointer';
