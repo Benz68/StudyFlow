@@ -10,6 +10,8 @@ import {renderCourses,setupCoursesUI} from './courses-ui.mjs';
 import {weeklyPanel,setupWeeklyUI} from './weekly-ui.mjs';
 import {renderPlanningHub} from './planning-hub.mjs';
 import {renderCalendar} from './calendar.mjs';
+import {helperForm,setupHelper} from './helper.mjs';
+import {enableVoice} from './voice.mjs';
 
 let state=loadState(), plan, view='today', selected=localDate(), undoState=null;
 let realState=null, editing=null, returnFocus=null, toastTimer, storageFailed=false, pendingImport=null;
@@ -18,8 +20,9 @@ const app=document.querySelector('#app');
 // The focus frame is for keyboard users; hide it after mouse or touch so it doesn't linger on buttons.
 document.addEventListener('pointerdown',()=>document.documentElement.classList.add('using-pointer'),true);
 document.addEventListener('keydown',event=>{if(event.key==='Tab')document.documentElement.classList.remove('using-pointer');},true);
-app.innerHTML=shell();document.body.classList.add('no-helper');
+app.innerHTML=shell();
 const sheet=document.querySelector('#sheet');
+enableVoice(sheet);
 const main=document.querySelector('#main');
 const clone=value=>JSON.parse(JSON.stringify(value));
 document.documentElement.dataset.inputModality='pointer';
@@ -161,6 +164,49 @@ function editEvent(id){
  }
  updateRepeat();
 }
+// The AI helper's items come back loosely filled; turn each into a task or fixed event the planner accepts,
+// and explain anything that can't be added as-is.
+const pad2=n=>String(n).padStart(2,'0');
+const dayName=date=>new Date(`${date}T12:00:00`).toLocaleDateString('he-IL',{weekday:'long',day:'numeric',month:'long'});
+function helperItem(item,taken){
+ const today=localDate(),title=String(item.title||'').trim().slice(0,120);
+ const date=validDate(item.date)?item.date:'',time=timeMinutes(item.time)!==null?item.time:'';
+ if(item.kind==='event'){
+  if(!date)return {problem:'לא ברור באיזה יום. אפשר להוסיף ידנית.',label:'שעה קבועה'};
+  if(timeMinutes(item.start)===null)return {problem:'לא ברור באיזו שעה. אפשר להוסיף ידנית.',label:`שעה קבועה · ${dayName(date)}`};
+  let end=timeMinutes(item.end)!==null&&item.end>item.start?item.end:'';
+  if(!end){const m=Math.min(timeMinutes(item.start)+60,23*60+59);end=`${pad2(Math.floor(m/60))}:${pad2(m%60)}`;}
+  const event={id:crypto.randomUUID(),title,date,start:item.start,end};
+  if(item.weekly)Object.assign(event,{repeat:'weekly',weekdays:[new Date(`${date}T12:00:00`).getDay()],repeatUntil:recurrenceEnd(date,'year'),excludedDates:[]});
+  const label=`שעה קבועה · ${dayName(date)} · ${item.start}–${end}${item.weekly?' · כל שבוע':''}`;
+  if(date<today)return {problem:'התאריך הזה כבר עבר.',label};
+  const clash=[...state.events,...taken].find(e=>eventsOverlap(e,event));
+  if(clash)return {problem:`חופף ל״${clash.title}״.`,label};
+  return {label,data:{kind:'event',event}};
+ }
+ const minutes=Math.min(Math.max(Number(item.minutes)||60,5),10080);
+ let deadline=[item.deadline,date].filter(validDate).sort().pop()||weekDates()[6];
+ if(deadline<today)deadline=today;
+ const task={id:crypto.randomUUID(),title,minutes,deadline,priority:'normal',category:['study','personal','work'].includes(item.category)?item.category:'study',preferredTime:'inherit',done:false,completedMinutes:0};
+ if(date&&date>=today){const start=new Date(`${date}T${time||'00:00'}`);if(start>new Date())task.notBefore=start.toISOString();}
+ const label=`משימה · ${duration(minutes)} · ${date?dayName(date)+(time?` ב־${time}`:''):'עד '+dayName(deadline)}`;
+ if(date&&date<today)return {problem:'היום הזה כבר עבר. נשבץ עד סוף השבוע אם מסמנים.',label,data:{kind:'task',task}};
+ return {label,data:{kind:'task',task}};
+}
+function showHelper(){
+ open(helperForm());
+ const taken=[];
+ setupHelper(sheet,{
+  today:localDate(),
+  weekday:new Date().toLocaleDateString('en-US',{weekday:'long'}),
+  describe:item=>{const result=helperItem(item,taken);if(result.data?.kind==='event'&&!result.problem)taken.push(result.data.event);return result;},
+  add:chosen=>{
+   const usable=chosen.filter(item=>item.data);
+   mutate(()=>{for(const {data,title} of usable){const name=title.trim().slice(0,120);if(data.kind==='task')state.tasks.push({...data.task,title:name});else state.events.push({...data.event,title:name});}},usable.length===1?'נוסף לתוכנית.':`נוספו ${usable.length} פריטים לתוכנית.`);
+   close();
+  }
+ });
+}
 function stopSeries(id){
  const item=state.events.find(e=>e.id===id&&e.repeat==='weekly');if(!item)return;
  open(`<div class="sheet-top"><h2 id="dialog-title">להפסיק מהיום?</h2><button class="icon-button" data-action="close" aria-label="סגירה">${icon('close')}</button></div><p>הפעילות לא תופיע מהיום והלאה. המועדים שכבר עברו יישמרו, והזמן שהתפנה יהיה זמין למשימות.</p><button class="primary submit-button" data-action="confirm-stop-series">כן, להפסיק מהיום</button><button class="text-button" data-action="cancel-stop-series">לחזור לעריכה</button>`);
@@ -189,6 +235,7 @@ document.addEventListener('click',event=>{
   case 'add-task':showAdd('task');sheet.querySelector('.form-tabs').hidden=true;break;
   case 'close':close();break;
   case 'settings':open(settingsForm(state.preferences));break;
+  case 'helper':showHelper();break;
   case 'restore-backup':if(pendingImport){mutate(()=>{state=pendingImport;},'הגיבוי שוחזר, כולל המטרות וההתקדמות.',true);pendingImport=null;close();}break;
 
   case 'tour':if(sheet.open)close();view='today';selected=localDate();render();startTour();break;
@@ -295,4 +342,6 @@ const uiContext={getState:()=>state,getPlan:()=>plan,open,close,mutate,replace:v
 const weeklyUI=setupWeeklyUI(uiContext);
 setupCoursesUI({...uiContext,addGoal:(courseId,topicId)=>{view='tasks';render();weeklyUI.addGoal(courseId,topicId);}});
 render();
+// The AI helper needs the local server; on a plain web host (GitHub Pages) its buttons are hidden.
+fetch('api/assistant').then(r=>r.ok?r.json():null).catch(()=>null).then(info=>{if(!info?.available)document.body.classList.add('no-helper');});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!sheet.open)render();});

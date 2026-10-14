@@ -458,3 +458,17 @@ button{transition:background .2s var(--ease),color .2s var(--ease),box-shadow .2
 /* No focus frame for mouse and touch users; keyboard users get a calm ink frame instead of orange */
 .using-pointer :focus-visible,.using-pointer :focus-visible+span{outline:none!important}
 button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible,.off-days input:focus-visible+span,.choice-chips input:focus-visible+span{outline-color:var(--ink)}
+/* Red frame on hover, only for the side-menu items (not the dark "התכנון שלי" button) */
+@media(hover:hover){.desktop-nav button:hover,.desktop-nav button.active:hover,.sidebar-settings:hover{background:transparent;box-shadow:inset 0 0 0 1.5px #d63a2fb3}}
+/* Talk instead of typing */
+.voice-field{position:relative;display:block}
+.voice-field>input,.voice-field>textarea{padding-left:48px}
+.voice-button{position:absolute;left:6px;top:50%;transform:translateY(-50%);width:38px;height:38px;min-height:38px;border-radius:50%;display:grid;place-items:center;color:var(--teal);background:transparent}
+.voice-field.is-area .voice-button{top:6px;transform:none}
+.voice-button .icon{width:20px;height:20px}
+.voice-button.listening{background:#c8402f;color:#fff}
+.voice-button.listening:after{content:'';position:absolute;inset:-4px;border-radius:50%;border:2px solid #d63a2f;animation:mic-ring 1.6s ease-out infinite}
+.voice-button:active{transform:translateY(-50%) scale(.94)}
+.voice-field.is-area .voice-button:active{transform:scale(.94)}
+.voice-note{display:block;font-size:13px;color:#a84936;margin-top:6px}
+@media(hover:hover){.voice-button:hover:not(.listening){background:var(--hover-fill)}}
