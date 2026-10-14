@@ -10,6 +10,8 @@ let active = null;
 export function enableVoice(root) {
  if (!Recognition || !root) return;
  const attach = () => root.querySelectorAll(FIELDS).forEach(field => {
+  // Course names are short, so their forms get no microphone.
+  if (field.closest('[data-no-voice], #course-edit, #weekly-course')) return;
   if (field.dataset.voice || field.id === 'helper-text' || field.classList.contains('voice-text') || field.classList.contains('helper-title') || field.readOnly || field.disabled) return;
   field.dataset.voice = 'on';
   const wrap = document.createElement('span');
