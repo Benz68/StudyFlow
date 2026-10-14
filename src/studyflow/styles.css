@@ -396,17 +396,17 @@ dialog{scrollbar-width:thin;scrollbar-color:#d8ccb6 transparent}
 .complete-button{border-radius:14px}
 .task-check{border-radius:9px}
 .sidebar-add,.desktop-nav button,.sidebar-settings{border-radius:14px}
-/* Hover = an outline drawn around the thing under the mouse, never a coloured fill */
-:root{--ring:#d63a2fb3;--ring-gap:#fffdf6}
+/* Hover: a soft warm fill on light buttons and a lighter shade on dark ones (no red outlines) */
+:root{--ring:transparent;--ring-gap:transparent;--hover-fill:#f1e9dc}
 button{transition:background .2s var(--ease),color .2s var(--ease),box-shadow .2s var(--ease),transform .15s var(--ease)}
 @media(hover:hover){
- .desktop-nav button:hover,.sidebar-settings:hover,.icon-button:hover,.text-button:hover,.text-button.muted:hover,.demo-button:hover,.agenda-date:hover,.demo-banner button:hover,.tour-back:hover,.tour-close:hover,.tour-lang:hover,.date-quick button:hover,.date-grid button:hover:not(:disabled):not(.selected),.form-tabs button:hover:not(.active),.duration-options button:hover,.task-check:hover:not(.checked),.bottom-nav>button:hover:not(.mobile-add),.edit-task:hover{background:transparent;box-shadow:inset 0 0 0 1.5px var(--ring);text-decoration:none}
- .desktop-nav button.active:hover{box-shadow:inset 0 0 0 1.5px var(--ring)}
- .date-display:hover{border-color:var(--ring)}
+ .desktop-nav button:hover,.sidebar-settings:hover,.icon-button:hover,.text-button:hover,.text-button.muted:hover,.demo-button:hover,.agenda-date:hover,.demo-banner button:hover,.tour-back:hover,.tour-close:hover,.tour-lang:hover,.date-quick button:hover,.date-grid button:hover:not(:disabled):not(.selected),.form-tabs button:hover:not(.active),.duration-options button:hover,.task-check:hover:not(.checked),.bottom-nav>button:hover:not(.mobile-add),.edit-task:hover{background:var(--hover-fill);box-shadow:none;text-decoration:none}
+ .desktop-nav button.active:hover{background:var(--hover-fill);box-shadow:none}
+ .date-display:hover{border-color:#c9b99c}
  .day-chip:hover:not(.selected){background:transparent}
  .day-chip:hover:not(.selected) b{background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpath d='M30 7 C 22 2, 8 4, 5 15 C 2 27, 12 37, 23 35 C 34 33, 38 22, 35 13 C 33 7, 27 4, 19 5' fill='none' stroke='%23d63a2f' stroke-opacity='.55' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat center/100% 100%}
- .primary:hover,button.primary:hover,.tour-next:hover,.bottom-nav>.mobile-add:hover{background:var(--ink);box-shadow:0 0 0 2px var(--ring-gap),0 0 0 3.5px var(--ring)}
- .complete-button:hover{background:transparent;color:var(--teal);box-shadow:0 0 0 2px var(--ring-gap),0 0 0 3.5px var(--ring)}
+ .primary:hover,button.primary:hover,.tour-next:hover,.bottom-nav>.mobile-add:hover{background:#4a443d;box-shadow:0 6px 14px #2d2a2633}
+ .complete-button:hover{background:var(--teal);color:#fff;box-shadow:none}
 }
 @media(hover:hover){.sidebar-add:hover,button.sidebar-add:hover{box-shadow:0 6px 14px #2d2a2633;background:#4a443d}}
 /* AI helper */
@@ -445,7 +445,7 @@ button{transition:background .2s var(--ease),color .2s var(--ease),box-shadow .2
 .helper-privacy{font-size:12px;color:var(--faint);line-height:1.6;margin-top:16px;text-align:center}
 @keyframes mic-ring{from{transform:scale(1);opacity:.8}to{transform:scale(1.35);opacity:0}}
 @keyframes dots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
-@media(hover:hover){.helper-button:hover{background:transparent;box-shadow:inset 0 0 0 1.5px var(--ring)}.helper-mic:hover{box-shadow:0 0 0 3px var(--ring-gap),0 0 0 4.5px var(--ring)}}
+@media(hover:hover){.helper-button:hover{background:#f8ece6;box-shadow:none}.helper-mic:hover{background:#4a443d;box-shadow:0 6px 16px #2d2a2633}}
 /* Phone comfort */
 .no-helper [data-action="helper"]{display:none!important}
 .week-total{font-size:14px;color:var(--muted);margin:-8px 0 14px}
