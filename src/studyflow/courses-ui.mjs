@@ -1,7 +1,8 @@
 import {escapeHTML as esc, icon, duration} from './views.mjs';
 import {courseProgress, courseLearningMinutes, normalizeTopics, topicsFromText} from './courses.mjs';
+import {renderCourseJourney, journeyPage, journeyLabels} from './course-journey.mjs';
 
-const labels = [['new', 'עוד לא התחלתי'], ['learning', 'בלמידה'], ['ready', 'מרגיש מוכן']];
+const labels = Object.entries(journeyLabels);
 const heading = title => `<div class="sheet-top"><h2 id="dialog-title">${esc(title)}</h2><button class="icon-button" data-action="close" aria-label="סגירה">${icon('close')}</button></div>`;
 const error = '<p class="form-error" role="alert" data-course-error></p>';
 const button = (action, title, id = '', extra = '') => `<button class="text-button" data-course-action="${action}" data-id="${esc(id)}" ${extra}>${title}</button>`;
@@ -19,7 +20,7 @@ function examChip(date) {
   return `<span class="course-chip ${days >= 0 && days <= 14 ? 'urgent' : ''}" title="${esc(new Date(`${date}T12:00:00`).toLocaleDateString('he-IL'))}">${label}</span>`;
 }
 // Display the allocation managed by weekly planning.
-const weeklyGoal = (state, id) => (state.goals || []).find(g => g.courseId === id && g.repeatWeekly && !g.topicId);
+const weeklyGoal = (state, id) => (state.goals || []).find(g => g.courseId === id && (g.repeatWeekly || g.weekStart === state.weekly.weekStart));
 export function renderCourses(state) {
   const courses = state.courses || [];
   const head = `<section class="page-heading"><div class="eyebrow">כל הקורסים במקום אחד</div><h1>הקורסים</h1></section>`;
@@ -46,9 +47,15 @@ export function setupCoursesUI(ctx) {
         ? state.courses.map(item => item.id === course.id ? course : item) : [...state.courses, course]});
     }, message);
   }
-  function details(id) {
+  const focusByCourse = new Map(), pageByCourse = new Map();
+  function details(id, previousId = '') {
     const state = getState(), course = state.courses.find(item => item.id === id); if (!course) return;
-    open(`${heading(course.name)}${progress(course)}<p class="field-help">${duration(courseLearningMinutes(state, id))} למידה שדיווחת השבוע. סימון נושא אינו תלוי בכמות השעות.</p><div class="weekly-actions">${button('topics', 'הוספת נושאים / סילבוס', id)}${button('goal', 'לקבוע כמה זמן ללמוד השבוע', id)}</div>${normalizeTopics(course.topics).map(topic => `<div class="course-topic"><label for="topic-${esc(topic.id)}">${esc(topic.title)}</label><select id="topic-${esc(topic.id)}" data-course-status="${esc(id)}" data-topic-id="${esc(topic.id)}">${labels.map(([value, title]) => `<option value="${value}" ${value === topic.status ? 'selected' : ''}>${title}</option>`).join('')}</select>${button('goal', 'להקדיש לזה זמן השבוע', id, `data-topic-id="${esc(topic.id)}"`)}</div>`).join('')}${error}`);
+    const selectedGoal = (state.goals || []).find(goal => goal.courseId === id && (goal.topicId || goal.topicIds?.length));
+    const focus = focusByCourse.get(id) || selectedGoal?.topicIds?.[0] || selectedGoal?.topicId || '';
+    const model = journeyPage(course, focus, pageByCourse.get(id));
+    focusByCourse.set(id, model.focused?.id || ''); pageByCourse.set(id, model.page);
+    open(`${heading(course.name)}${progress(course)}<p class="field-help">${duration(courseLearningMinutes(state, id))} למידה שדיווחת השבוע. ההתקדמות במסלול מבוססת על הבנה, לא על שעות.</p><div class="weekly-actions">${button('topics', 'הוספת נושאים / סילבוס', id)}${button('goal', 'לתכנן למידה בקורס הזה', id)}</div><div data-course-journey>${renderCourseJourney(course, focusByCourse.get(id), model.page, previousId)}</div>${error}`);
+
   }
   function edit(id) {
     const state = getState(), course = state.courses.find(item => item.id === id) || {};
@@ -66,6 +73,15 @@ export function setupCoursesUI(ctx) {
   document.addEventListener('click', event => {
     const target = event.target.closest('[data-course-action]'); if (!target) return;
     const id = target.dataset.id;
+    if (target.dataset.courseAction === 'journey-focus') {
+      const previous = event.detail ? focusByCourse.get(id) : '';
+      focusByCourse.set(id, target.dataset.topicId); details(id, previous);
+      document.querySelector('[data-course-journey] .journey-topic.selected')?.focus({preventScroll: true});
+    }
+    if (target.dataset.courseAction === 'journey-page') {
+      pageByCourse.set(id, Number(target.dataset.page)); details(id);
+      document.querySelector('[data-course-journey] .journey-topic.selected')?.focus({preventScroll: true});
+    }
     if (target.dataset.courseAction === 'open') details(id);
     if (target.dataset.courseAction === 'edit') edit(id);
     if (target.dataset.courseAction === 'topics') topics(id);
@@ -77,10 +93,12 @@ export function setupCoursesUI(ctx) {
       const course = getState().courses.find(item => item.id === target.dataset.courseStatus);
       if (!course || !labels.some(([value]) => value === target.value)) return;
       saveCourse({...course, topics: normalizeTopics(course.topics).map(topic => topic.id === target.dataset.topicId ? {...topic, status: target.value} : topic)}, 'ההתקדמות בקורס נשמרה.');
-      const dialog = target.closest('dialog') || target.parentElement.parentElement;
-      const bar = dialog.querySelector('progress');
-      const updated = getState().courses.find(item => item.id === course.id);
-      if (bar) { const p = courseProgress(updated); bar.value = p.ready; bar.textContent = `${p.percent}%`; bar.previousElementSibling.textContent = `${p.ready} מתוך ${p.total} נושאים מוכנים · ${p.learning} בלמידה`; }
+      const completed = target.value === 'ready';
+      const nextTopic = completed && getState().courses.find(c => c.id === course.id)?.topics.find(t => t.id !== target.dataset.topicId && t.status !== 'ready');
+      focusByCourse.set(course.id, nextTopic?.id || target.dataset.topicId);
+      if(nextTopic)pageByCourse.delete(course.id);
+      details(course.id, completed ? target.dataset.topicId : '');
+      document.querySelector('#journey-status')?.focus({preventScroll: true});
     }
     if (target.matches('[data-course-file]')) {
       const file = target.files?.[0], form = target.closest('form'); if (!file) return;
@@ -116,4 +134,5 @@ export function setupCoursesUI(ctx) {
       }
     } catch (e) { form.querySelector('[data-course-error]').textContent = e.message; }
   });
+  return {edit, details};
 }

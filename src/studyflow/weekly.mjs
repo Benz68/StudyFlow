@@ -27,6 +27,7 @@ export function normalizeWeekly(value = {}, now = new Date(), nested = false) {
     id: clean(x.id), title: clean(x.title), minutes: bounded(x.minutes, 60, 5, 10080),
     priority: choice(x.priority, priorities, 'normal'), category: choice(x.category, ['study', 'personal', 'work'], 'study'),
     courseId: courses.some(c => c.id === x.courseId) ? x.courseId : '', repeatWeekly: x.repeatWeekly === true,
+    topicIds:[...new Set(list(x.topicIds||[x.topicId]))].filter(id=>courses.find(c=>c.id===x.courseId)?.topics.some(t=>t.id===id)),
     topicId: courses.find(c=>c.id===x.courseId)?.topics.some(t=>t.id===x.topicId)?x.topicId:'',
     weekStart: validDate(x.weekStart) ? weekStart(x.weekStart) : start,
     preferredTime: choice(x.preferredTime, ['any', 'morning', 'afternoon', 'evening'], 'any'),
@@ -47,7 +48,7 @@ export function normalizeWeekly(value = {}, now = new Date(), nested = false) {
     sessionId: clean(x.sessionId, 200), goalId: clean(x.goalId), date: x.date, minutes: bounded(x.minutes, 0, 0, Math.min(goals.find(g=>g.id===clean(x.goalId)).minutes,Math.max(0,(timeMinutes(x.end)||0)-(timeMinutes(x.start)||0)))),
     start: timeMinutes(x.start) !== null ? x.start : '00:00', end: timeMinutes(x.end) !== null ? x.end : '00:00',
   }));
-  return { courses, goals, weekly: { weekStart: start, load: choice(w.load, ['light', 'balanced', 'heavy'], 'balanced'),
+  return { courses, goals, weekly: { approvedAt:typeof w.approvedAt==='string'&&!Number.isNaN(Date.parse(w.approvedAt))?w.approvedAt:'', weekStart: start, load: choice(w.load, ['light', 'balanced', 'heavy'], 'balanced'),
     ...(!nested && validDate(w.nextWeek?.weekly?.weekStart) ? {nextWeek:normalizeWeekly(w.nextWeek,now,true)} : {}),
     energy: choice(w.energy, ['low', 'normal', 'high'], 'normal'), fewerSwitches: w.fewerSwitches === true,
     skippedGoalIds: [...new Set(list(w.skippedGoalIds).map(id=>clean(id)).filter(id=>goals.some(g=>g.id===id)))], sessions, completions,
@@ -223,7 +224,7 @@ export function preparePlanningWeek(state, now = new Date(), options = {}) {
       minutes:Math.max(0,g.minutes-previous.completions.filter(c=>c.goalId===g.id).reduce((n,c)=>n+c.minutes,0))} : g).filter(g=>g.minutes>0);
     const review={weekStart:previous.weekStart,completedMinutes:previous.completions.reduce((n,c)=>n+c.minutes,0),note:clean(options.note,500)};
     const reviews=previous.reviews.some(r=>r.weekStart===review.weekStart) ? previous.reviews : [...previous.reviews,review].slice(-52);
-    draft={...current,goals,weekly:{...previous,nextWeek:undefined,weekStart:target,sessions:[],completions:[],overrides:previous.overrides.filter(o=>o.date>=target&&o.date<=addDays(target,6)),skippedGoalIds:[],reviews}};
+    draft={...current,goals,weekly:{...previous,nextWeek:undefined,approvedAt:'',weekStart:target,sessions:[],completions:[],overrides:previous.overrides.filter(o=>o.date>=target&&o.date<=addDays(target,6)),skippedGoalIds:[],reviews}};
   }
   draft={...draft,...normalizeWeekly(draft,now,true)};
   if(Array.isArray(options.skipGoalIds)) draft.weekly.skippedGoalIds=options.skipGoalIds.filter(id=>draft.goals.some(g=>g.id===id&&g.repeatWeekly));

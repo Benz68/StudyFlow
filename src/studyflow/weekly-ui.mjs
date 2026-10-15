@@ -1,5 +1,6 @@
 import {escapeHTML as esc,icon,duration} from './views.mjs';
 import {setupWeeklyWizard} from './weekly-wizard.mjs';
+import {saveGoalReport,reportGoalSession,removeGoalReport,updateGoalJournal} from './goal-progress.mjs';
 import {localDate} from './planner.mjs';
 import {buildWeeklyPlan,previewNextWeek,acceptNextWeek,completeWeeklySession,moveWeeklySession,setSessionLocked,addDays,reviewAvailability,planningTarget,preparePlanningWeek,applyChange} from './weekly.mjs';
 const FEELS=[['good','😊','הולך טוב'],['ok','😐','ככה ככה'],['hard','😕','קשה לי']];
@@ -33,6 +34,10 @@ export function setupWeeklyUI(ctx){
   try{switch(t.dataset.weekly){
    case 'goal':showGoal(id);break;
    case 'goal-progress':showProgress(id);break;
+   case 'report':showReport(id,t.dataset.report);break;
+   case 'remove-report':mutate(()=>replace(removeGoalReport(state,id,t.dataset.report)),'הדיווח נמחק. אפשר לבטל.');showProgress(id);break;
+   case 'edit-journal':showJournal(id,Number(t.dataset.index));break;
+   case 'delete-journal':mutate(()=>replace(updateGoalJournal(state,id,Number(t.dataset.index),null)),'הרשומה נמחקה. אפשר לבטל.');showProgress(id);break;
    case 'courses-time':wizard.startPlanning(1);break;
    case 'unexpected':showUnexpected();break;
    case 'approve':if(proposal)commit(nextWeek?acceptNextWeek(state,proposal):proposal,'התוכנית אושרה. אפשר לשנות אותה בכל רגע.');proposal=null;break;
@@ -41,7 +46,7 @@ export function setupWeeklyUI(ctx){
    case 'view-next':if(state.weekly.nextWeek)wizard.preview({...state,...state.weekly.nextWeek},true);break;
    case 'change':open(`${heading('מה מתאים לך היום?')}<form id="weekly-change"><label for="changed-date">באיזה יום?</label><input id="changed-date" name="date" type="hidden" data-picker min="${state.weekly.weekStart}" max="${addDays(state.weekly.weekStart,6)}" value="${localDate()}"><label for="changed-minutes">כמה דקות אפשר להקדיש למטרות?</label><input id="changed-minutes" name="maxMinutes" type="number" min="0" max="720" step="5" value="30" required><small class="field-help">0 = היום לא מסתדר. ההתחייבויות הקבועות נשארות.</small><label for="changed-energy">האנרגיה שלי</label><select id="changed-energy" name="energy">${options(energies,'normal')}</select>${submit('לראות התאמה לשבוע')}</form>`);break;
    case 'course':{const c=state.courses.find(c=>c.id===id)||{};open(`${heading('המקצועות שלי')}<form id="weekly-course" data-id="${esc(id||'')}"><label for="course-name">שם המקצוע</label><input id="course-name" name="name" maxlength="120" value="${esc(c.name||'')}" required><label for="course-difficulty">איך הולך כרגע?</label><select id="course-difficulty" name="difficulty">${options([['1','די נוח'],['2','צריך תרגול'],['3','מאתגר — עדיף מקטעים קצרים']],String(c.difficulty||2))}</select><label for="course-exam">מועד מבחן (לא חובה)</label><input id="course-exam" name="examDate" type="hidden" data-picker data-optional value="${esc(c.examDate||'')}">${submit('לשמור מקצוע')}</form>`);break;}
-   case 'complete':{const s=getState().weekly.sessions.find(s=>s.id===id);if(s)commit(completeWeeklySession(state,id,s.minutes),'ההתקדמות נשמרה. כל צעד נחשב.');break;}
+   case 'complete':{const s=getState().weekly.sessions.find(s=>s.id===id);if(s)commit(reportGoalSession(state,id,s.minutes),'ההתקדמות נשמרה. כל צעד נחשב.');break;}
    case 'partial':{const s=getState().weekly.sessions.find(s=>s.id===id);if(s)open(`${heading('כמה הספקת?')}<form id="weekly-partial" data-id="${esc(id)}"><label for="done-minutes">דקות שבוצעו מתוך ${s.minutes}</label><input id="done-minutes" name="minutes" type="number" min="0" max="${s.minutes}" step="1" value="${Math.floor(s.minutes/2)}" required><small class="field-help">השאר יישאר במטרה ונחפש לו מקום. 0 פירושו שלא הסתדר.</small>${submit('לעדכן התקדמות')}</form>`);break;}
    case 'move':{const s=getState().weekly.sessions.find(s=>s.id===id);if(s)open(`${heading('המפגש בזמן שמתאים לך')}<form id="weekly-move" data-id="${esc(id)}"><label for="move-date">תאריך</label><input id="move-date" name="date" type="hidden" data-picker min="${state.weekly.weekStart}" max="${addDays(state.weekly.weekStart,6)}" value="${s.date}"><label for="move-time">שעה</label><input id="move-time" name="start" type="time" value="${s.start}" required><p class="field-help">נבדוק שאין התנגשות. הבחירה שלך תינעל כדי לשמור עליה.</p>${submit('להעביר ולנעול')}</form>`);break;}
    case 'lock':{const s=getState().weekly.sessions.find(s=>s.id===id);if(s)commit(setSessionLocked(state,id,!s.locked),s.locked?'המפגש פתוח לתכנון מחדש.':'המפגש נעול בזמן שבחרת.');break;}
@@ -51,7 +56,7 @@ export function setupWeeklyUI(ctx){
  document.addEventListener('submit',event=>{
   const f=event.target;if(!f.id.startsWith('weekly-'))return;event.preventDefault();const fd=new FormData(f),state=getState(),next=clone(state);
   try{switch(f.id){
-   case 'weekly-goal':{const title=String(fd.get('title')||'').trim(),minutes=Number(fd.get('hours'))*60;if(!title||!Number.isFinite(minutes)||minutes<15||minutes>10080)throw Error('נבחר שם ויעד זמן תקינים.');const g={id:f.dataset.id||crypto.randomUUID(),title,minutes,category:fd.get('category'),courseId:fd.get('courseId'),topicId:f.dataset.topicId||'',priority:fd.get('priority'),preferredTime:fd.get('preferredTime'),sessionMinutes:Number(fd.get('sessionMinutes')),repeatWeekly:fd.has('repeatWeekly'),weekStart:state.weekly.weekStart};next.goals=next.goals.filter(x=>x.id!==g.id).concat(g);next.weekly.sessions=next.weekly.sessions.filter(s=>s.goalId!==g.id||s.locked||s.date<localDate()||(s.date===localDate()&&s.start<new Date().toTimeString().slice(0,5)));preview(next);break;}
+   case 'weekly-goal':{const title=String(fd.get('title')||'').trim(),minutes=Number(fd.get('hours'))*60;if(!title||!Number.isFinite(minutes)||minutes<15||minutes>10080)throw Error('נבחר שם ויעד זמן תקינים.');const g={...state.goals.find(g=>g.id===f.dataset.id),id:f.dataset.id||crypto.randomUUID(),title,minutes,category:fd.get('category'),courseId:fd.get('courseId'),topicId:f.dataset.topicId||'',priority:fd.get('priority'),preferredTime:fd.get('preferredTime'),sessionMinutes:Number(fd.get('sessionMinutes')),repeatWeekly:fd.has('repeatWeekly'),weekStart:state.weekly.weekStart};next.goals=next.goals.filter(x=>x.id!==g.id).concat(g);next.weekly.sessions=next.weekly.sessions.filter(s=>s.goalId!==g.id||s.locked||s.date<localDate()||(s.date===localDate()&&s.start<new Date().toTimeString().slice(0,5)));preview(next);break;}
    case 'weekly-pace':next.weekly.sessions=next.weekly.sessions.filter(s=>s.locked||s.date<localDate()||(s.date===localDate()&&s.start<new Date().toTimeString().slice(0,5)));next.weekly.load=fd.get('load');next.weekly.energy=fd.get('energy');preview(next);break;
    case 'weekly-change':next.weekly.overrides=next.weekly.overrides.filter(x=>x.date!==fd.get('date')).concat({date:fd.get('date'),maxMinutes:Number(fd.get('maxMinutes')),energy:fd.get('energy')});preview(next);break;
    case 'weekly-course':{const name=String(fd.get('name')||'').trim();if(!name)throw Error('צריך שם למקצוע.');const c={...state.courses.find(c=>c.id===f.dataset.id),id:f.dataset.id||crypto.randomUUID(),name,difficulty:Number(fd.get('difficulty')),examDate:fd.get('examDate')};next.courses=next.courses.filter(x=>x.id!==c.id).concat(c);commit(next,'המקצוע נשמר. אפשר לשייך אליו מטרות.');break;}
@@ -62,11 +67,13 @@ export function setupWeeklyUI(ctx){
    }
    case 'weekly-journal':{
     const text=String(fd.get('text')||'').trim();if(!text)throw Error('כותבים כמה מילים על איך הולך.');
+    if(f.dataset.index!==undefined){mutate(()=>replace(updateGoalJournal(state,f.dataset.id,Number(f.dataset.index),{text,feel:fd.get('feel')||'ok'})),'הרשומה עודכנה.');showProgress(f.dataset.id);break;}
     const g=next.goals.find(g=>g.id===f.dataset.id);if(!g)break;
     g.journal=[...(g.journal||[]),{date:localDate(),text:text.slice(0,2000),feel:fd.get('feel')||'ok'}];
     mutate(()=>replace(next),'נשמר ביומן של המטרה.');showProgress(g.id);break;
    }
-   case 'weekly-partial':commit(completeWeeklySession(state,f.dataset.id,Number(fd.get('minutes'))),'ההתקדמות נשמרה והשאר נשאר בתוכנית.');break;
+   case 'weekly-report':{const updated=saveGoalReport(state,{goalId:f.dataset.id,sessionId:f.dataset.report||undefined,date:String(fd.get('date')),start:String(fd.get('start')),end:String(fd.get('end')),minutes:Number(fd.get('minutes'))});mutate(()=>replace(updated),'זמן הלמידה נשמר. הבנת החומר מעדכנים בנפרד בקורס.');showProgress(f.dataset.id);break;}
+   case 'weekly-partial':commit(reportGoalSession(state,f.dataset.id,Number(fd.get('minutes'))),'ההתקדמות נשמרה והשאר נשאר בתוכנית.');break;
    case 'weekly-move':commit(moveWeeklySession(state,f.dataset.id,fd.get('date'),fd.get('start')),'המפגש הועבר וננעל.');break;
   }}catch(e){f.querySelector('#weekly-error').textContent=e.message;}
  });
@@ -81,11 +88,25 @@ export function setupWeeklyUI(ctx){
   const state=getState(),g=state.goals.find(g=>g.id===id);if(!g)return;
   const w=state.weekly,done=w.completions.filter(c=>c.goalId===id).reduce((n,c)=>n+c.minutes,0),pct=Math.min(100,Math.round(done/Math.max(1,g.minutes)*100));
   const now=localDate(),upcoming=w.sessions.filter(s=>s.goalId===id&&s.date>=now).sort((a,b)=>(a.date+a.start).localeCompare(b.date+b.start)).slice(0,3);
-  const entries=[...(g.journal||[])].reverse();
+  const entries=(g.journal||[]).map((e,index)=>({...e,index})).reverse();
+  const reports=w.completions.filter(c=>c.goalId===id);
+  const past=w.sessions.filter(s=>s.goalId===id&&(s.date<now||(s.date===now&&s.start<new Date().toTimeString().slice(0,5))));
   open(`${heading(esc(g.title))}<div class="goal-progress"><div class="goal-progress-top"><span>השבוע</span><b>${duration(done)} מתוך ${duration(g.minutes)}</b></div><div class="progress-track"><i style="width:${pct}%"></i></div><p class="field-help">${upcoming.length?'הפעמים הבאות: '+upcoming.map(s=>`${shortDate(s.date)} ב־${s.start}`).join(' · '):'אין כרגע זמן מתוכנן השבוע. אפשר לתכנן מחדש את השבוע.'}</p></div>
+  <div class="weekly-actions"><button class="primary" data-weekly="report" data-id="${esc(id)}">עדכון זמן שביצעתי</button>${g.courseId?`<button class="text-button" data-course-action="open" data-id="${esc(g.courseId)}">לעדכן הבנה במסלול הקורס</button>`:''}</div>
+  ${past.length?`<section><h3>מפגשים לעדכון</h3>${past.map(s=>`<p>${shortDate(s.date)} · ${s.start} · ${duration(s.minutes)} <button class="text-button" data-weekly="complete" data-id="${esc(s.id)}">סיימתי</button><button class="text-button" data-weekly="partial" data-id="${esc(s.id)}">עשיתי חלק</button></p>`).join('')}</section>`:''}
+  ${reports.length?`<section><h3>זמן שדיווחתי</h3>${reports.map(r=>`<p>${shortDate(r.date)} · ${r.start}–${r.end} · ${duration(r.minutes)} <button class="text-button" data-weekly="report" data-id="${esc(id)}" data-report="${esc(r.sessionId)}">תיקון</button><button class="text-button" data-weekly="remove-report" data-id="${esc(id)}" data-report="${esc(r.sessionId)}">מחיקה</button></p>`).join('')}</section>`:''}
   <form id="weekly-journal" data-id="${esc(id)}" class="goal-journal-form"><p class="wizard-q">איך הולך עם ${esc(g.title)}?</p><div class="choice-chips feel-chips">${FEELS.map(([v,e,t],i)=>`<label><input type="radio" name="feel" value="${v}" ${i===0?'checked':''}><span>${e}<small>${t}</small></span></label>`).join('')}</div><label for="journal-text">יומן אישי</label><textarea id="journal-text" name="text" rows="3" maxlength="2000" placeholder="מה עשית, מה הרגשת, מה הצעד הבא?"></textarea>${submit('לשמור ביומן')}</form>
-  ${entries.length?`<section class="goal-journal"><h3>מה כתבת עד עכשיו</h3>${entries.map(e=>`<article><header><span>${FEELS.find(f=>f[0]===e.feel)?.[1]||''}</span><time>${shortDate(e.date)}</time></header><p>${esc(e.text)}</p></article>`).join('')}</section>`:''}
+  ${entries.length?`<section class="goal-journal"><h3>מה כתבת עד עכשיו</h3>${entries.map(e=>`<article><header><span>${FEELS.find(f=>f[0]===e.feel)?.[1]||''}</span><time>${shortDate(e.date)}</time></header><p>${esc(e.text)}</p><button class="text-button" data-weekly="edit-journal" data-id="${esc(id)}" data-index="${e.index}">עריכה</button><button class="text-button" data-weekly="delete-journal" data-id="${esc(id)}" data-index="${e.index}">מחיקה</button></article>`).join('')}</section>`:''}
   <button class="text-button goal-edit-link" data-weekly="goal" data-id="${esc(id)}">לשנות את המטרה (שם, שעות)</button>`);
+ }
+
+ function showReport(id,reportId){
+  const state=getState(),r=state.weekly.completions.find(c=>c.sessionId===reportId&&c.goalId===id)||{};
+  open(`${heading(reportId?'תיקון זמן שביצעתי':'כמה זמן עבדת בפועל?')}<form id="weekly-report" data-id="${esc(id)}" data-report="${esc(reportId||'')}"><label>תאריך</label><input name="date" type="date" min="${state.weekly.weekStart}" max="${localDate()}" value="${r.date||localDate()}" required><label>התחלתי בשעה</label><input name="start" type="time" value="${r.start||''}" required><label>סיימתי בשעה</label><input name="end" type="time" value="${r.end||''}" required><label>דקות עבודה נטו</label><input name="minutes" type="number" min="1" max="1440" step="1" value="${r.minutes||''}" required><p class="field-help">בלי הפסקות. הזמן נספר פעם אחת; דיווח על למידה אינו מסמן שהנושא הובן.</p>${submit('לשמור דיווח')}</form>`);
+ }
+ function showJournal(id,index){
+  const e=getState().goals.find(g=>g.id===id)?.journal?.[index];if(!e)return;
+  open(`${heading('עריכת רשומה ביומן')}<form id="weekly-journal" data-id="${esc(id)}" data-index="${index}"><label>איך הולך?</label><select name="feel">${options(FEELS.map(([v,e,t])=>[v,e+' '+t]),e.feel)}</select><label>יומן אישי</label><textarea name="text" rows="4" maxlength="2000" required>${esc(e.text)}</textarea>${submit('לשמור שינויים')}</form>`);
  }
  return {addGoal:(courseId,topicId)=>showGoal(null,courseId,topicId)};
 }

@@ -81,6 +81,7 @@ function mutate(change,message,keepNextWeek=false){
 }
 function open(content){
  if(!sheet.open)returnFocus=rememberFocus(document.activeElement);
+ sheet.classList.remove('proposal-sheet');
  sheet.innerHTML=content;enhanceDates(sheet);
  const touchOpening=matchMedia('(pointer: coarse)').matches&&document.documentElement.dataset.inputModality!=='keyboard';
  const heading=sheet.querySelector('#dialog-title');
@@ -94,11 +95,14 @@ function finishClose(){
  document.body.classList.remove('dialog-open');editing=null;formDrafts={};
  const saved=returnFocus;returnFocus=null;restoreFocus(saved);
 }
-function close(){sheet.close();finishClose();}
+function close(){sheet.close();finishClose();const resume=dialogResume;dialogResume=null;if(resume)queueMicrotask(resume);}
 sheet.addEventListener('cancel',event=>{event.preventDefault();close();});
 sheet.addEventListener('close',finishClose);
 sheet.addEventListener('click',event=>{if(event.target===sheet){const r=sheet.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)close();}});
 let formDrafts={};
+let dialogResume=null;
+function withReturn(show,resume){dialogResume=resume;show();}
+
 function showAdd(tab='task',keep=false){if(!keep)formDrafts={};editing=null;open(addForm(localDate(),weekDates()[6],tab));const f=sheet.querySelector('form');for(const [key,value] of Object.entries(formDrafts[tab]||{})){const els=[...f.elements].filter(el=>el.name===key);els.forEach(el=>{if(el.type==='checkbox')el.checked=value.includes(el.value);else el.value=value[0];});}if(tab==='event')updateRepeat();enhanceDates(f);}
 function switchAdd(tab){const f=sheet.querySelector('#add-form');if(f){const fd=new FormData(f);formDrafts[f.dataset.kind]=Object.fromEntries([...new Set(fd.keys())].map(k=>[k,fd.getAll(k)]));}showAdd(tab,true);}
 function editTask(id){
@@ -294,8 +298,8 @@ document.addEventListener('change',async event=>{
   mutate(()=>{state.tasks=tasks;state.events=events;},'המשימות וההתחייבויות מהגיבוי נוספו.');close();
  }catch{toast('לא הצלחנו לקרוא את הגיבוי. יש לבחור קובץ גיבוי תקין של StudyFlow.');}
 });
-const uiContext={getState:()=>state,getPlan:()=>plan,open,close,mutate,replace:value=>{state=value;},toast};
+const uiContext={openCourse:resume=>withReturn(()=>coursesUI.edit(),resume),openCourseProgress:(id,resume)=>withReturn(()=>coursesUI.details(id),resume),openCommitment:resume=>withReturn(()=>{showAdd('event');sheet.querySelector('.form-tabs').hidden=true;},resume),getState:()=>state,getPlan:()=>plan,open,close,mutate,replace:value=>{state=value;},toast};
 const weeklyUI=setupWeeklyUI(uiContext);
-setupCoursesUI({...uiContext,addGoal:(courseId,topicId)=>{view='tasks';render();weeklyUI.addGoal(courseId,topicId);}});
+const coursesUI=setupCoursesUI({...uiContext,addGoal:(courseId,topicId)=>{view='tasks';render();weeklyUI.addGoal(courseId,topicId);}});
 render();
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!sheet.open)render();});
