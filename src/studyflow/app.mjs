@@ -1,0 +1,498 @@
+// The app: one state object saved in this browser, screens chosen by the address (#today, #course/ID…),
+// and every change made through mutate() so it is validated, saved and can be undone.
+import {uid, localDate, addDays, toMin, toClock, weekStart, validDate, dayLabel, dateLabel} from './util.mjs';
+import {loadState, saveState, validateState, migrateV1, demoState} from './store.mjs';
+import {shell, today, studies, coursePage, goals, goalPage, calendar, work, jobPage} from './screens.mjs';
+import {classForm, icsPreview, courseForm, topicsForm, goalForm, logForm, moveForm, settingsForm, helpContent, jobForm, shiftForm, weekShiftsForm} from './dialogs.mjs';
+import {parseTell} from './tell.mjs';
+import {propose, toItems, toShifts} from './propose.mjs';
+import {findTime, conflictsFor, classesOn, placeFlexible, alternatives, busyOn} from './schedule.mjs';
+import {shiftSegments, repeatDates} from './work.mjs';
+import {parseICS, courseNameOf} from './ics.mjs';
+import {fileText, readSyllabus} from './syllabus.mjs';
+import {amountForSession} from './progress.mjs';
+
+const Recognition = globalThis.SpeechRecognition || globalThis.webkitSpeechRecognition;
+let {state, notice} = loadState();
+let saved = null, undoState = null, toastTimer = null, recognition = null, returnFocus = null;
+const ui = {tellText: '', drafts: null, proposals: null, find: null, week: '', demo: false, micAvailable: !!Recognition, listening: false, pending: null};
+
+document.querySelector('#app').innerHTML = shell();
+const main = document.querySelector('#main'), sheet = document.querySelector('#sheet');
+const clone = value => JSON.parse(JSON.stringify(value));
+navigator.storage?.persist?.().catch(() => {});
+
+// ── Rendering ──
+const route = () => { const [name, id] = location.hash.slice(1).split('/'); return {name: name || 'today', id: decodeURIComponent(id || '')}; };
+
+function render() {
+  const {name, id} = route();
+  const active = document.activeElement, focusKey = active?.dataset?.p !== undefined ? `[data-p="${active.dataset.p}"][data-field="${active.dataset.field}"]` : '';
+  const screens = {today: () => today(state, ui), studies: () => studies(state), course: () => coursePage(state, id, ui),
+    goals: () => goals(state), goal: () => goalPage(state, id, ui), calendar: () => calendar(state, ui),
+    work: () => work(state, ui), job: () => jobPage(state, id, ui)};
+  main.innerHTML = noticeBanner() + (screens[name] || screens.today)();
+  const tab = {course: 'studies', goal: 'goals', job: 'work'}[name] || name;
+  document.querySelectorAll('[data-route]').forEach(b => { const on = b.dataset.route === tab; b.classList.toggle('active', on); on ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current'); });
+  if (focusKey) main.querySelector(focusKey)?.focus({preventScroll: true});
+  if (name === 'work' || name === 'job') fillJar(`${name}:${id}:${ui.month || ''}`);
+}
+
+// When money arrives (a shift ended since the last look), a coin drops into the jar and the number counts up.
+// What was last seen is a per-device convenience only, so storage problems just skip the animation.
+function fillJar(key) {
+  const el = main.querySelector('.jar'); if (!el || ui.demo) return;
+  const earned = Number(el.dataset.earned);
+  let seen = {};
+  try { seen = JSON.parse(localStorage.getItem('studyflow.jar.seen') || '{}'); } catch { return; }
+  const before = seen[key];
+  try { localStorage.setItem('studyflow.jar.seen', JSON.stringify({...seen, [key]: earned})); } catch { /* fine */ }
+  if (before === undefined || earned <= before || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  el.classList.add('is-dropping');
+  const number = el.querySelector('[data-count]'), started = performance.now();
+  const step = time => {
+    const p = Math.min(1, (time - started) / 1200), value = Math.round(before + (earned - before) * (1 - (1 - p) ** 3));
+    number.textContent = `${value.toLocaleString('he-IL')} ₪`;
+    if (p < 1) requestAnimationFrame(step);
+  };
+  setTimeout(() => requestAnimationFrame(step), 600);
+}
+// While on the work screens, refresh every minute: a running shift's money grows, and an ended one drops in.
+setInterval(() => { if (['work', 'job'].includes(route().name) && !sheet.open && !document.hidden) render(); }, 60000);
+
+// The work week is Sunday to Friday. On Saturday, the week to plan is the coming one.
+const thisWorkWeek = () => weekStart(localDate());
+const workWeek = () => new Date().getDay() === 6 ? addDays(thisWorkWeek(), 7) : thisWorkWeek();
+const lastTimes = jobId => {
+  const last = [...state.shifts].filter(s => s.jobId === jobId).sort((a, b) => b.date.localeCompare(a.date))[0];
+  return last ? {start: last.start, end: last.end} : {start: '16:00', end: '22:00'};
+};
+
+function noticeBanner() {
+  const text = {
+    migrated: 'עברנו לגרסה החדשה. הקורסים, מערכת השעות והמטרות עברו. התוכנית הישנה נשמרה בגיבוי במכשיר.',
+    unreadable: 'השמירה הקודמת לא הייתה קריאה, אז התחלנו מחדש. העותק הישן נשמר בצד ולא נמחק.',
+    storage: 'הדפדפן לא מאפשר לשמור. אפשר להשתמש, אבל השינויים לא יישמרו אחרי סגירה.',
+    unsaved: 'השינוי מוצג, אבל לא נשמר במכשיר. כדאי להוריד גיבוי דרך ההעדפות.',
+  }[notice];
+  return text ? `<p class="storage-warning" role="status">${text} <button class="text-button" data-action="dismiss-notice">הבנתי</button></p>` : '';
+}
+
+function toast(message, withUndo = false) {
+  clearTimeout(toastTimer);
+  const el = document.querySelector('#toast');
+  el.replaceChildren(Object.assign(document.createElement('span'), {textContent: message}));
+  if (withUndo) el.append(Object.assign(document.createElement('button'), {textContent: 'לבטל את השינוי', className: 'toast-undo'}));
+  el.classList.add('visible');
+  toastTimer = setTimeout(() => el.classList.remove('visible'), 6000);
+}
+
+function mutate(change, message) {
+  undoState = clone(state);
+  change();
+  state = validateState(state);
+  if (!ui.demo) { const ok = saveState(state); notice = ok ? (notice === 'unsaved' ? '' : notice) : 'unsaved'; }
+  render();
+  if (message) toast(message, true);
+}
+
+// ── Dialogs ──
+function open(html) {
+  if (!sheet.open) returnFocus = document.activeElement;
+  sheet.innerHTML = html;
+  if (!sheet.open) sheet.showModal();
+  document.body.classList.add('dialog-open');
+  (sheet.querySelector('[autofocus]') || sheet.querySelector('#dialog-title'))?.focus?.();
+}
+function close() { if (sheet.open) sheet.close(); }
+sheet.addEventListener('close', () => {
+  document.body.classList.remove('dialog-open'); ui.pending = null;
+  if (returnFocus?.isConnected) returnFocus.focus({preventScroll: true});
+});
+sheet.addEventListener('click', e => { if (e.target === sheet) close(); });
+const formError = (form, message) => { const el = form.querySelector('[data-error]'); if (el) el.textContent = message; };
+
+// ── "Tell me" ──
+function runTell() {
+  const text = (main.querySelector('#tell-text')?.value || ui.tellText).trim();
+  ui.tellText = text; ui.tellError = '';
+  if (!text) { ui.tellError = 'קודם כותבים או אומרים מה צריך לעשות.'; return render(); }
+  const drafts = parseTell(text, state);
+  if (!drafts.length) { ui.tellError = 'לא הצלחתי להבין. אפשר לנסות לכתוב כל דבר בנפרד, עם פסיקים.'; return render(); }
+  ui.drafts = drafts; refreshProposals();
+}
+function refreshProposals() { ui.proposals = propose(state, ui.drafts); render(); }
+function editDraft(i, field, value) {
+  const d = ui.drafts[i]; if (!d) return;
+  if (field === 'title') { d.title = value.slice(0, 120); return; }
+  if (field === 'date' && validDate(value)) { d.date = value; delete d.deadline; }
+  if (field === 'minutes') { d.minutes = Number(value); if (d.fixed && d.start) d.end = toClock(Math.min(toMin(d.start) + d.minutes, 1439)); }
+  if (field === 'mode') {
+    const placed = ui.proposals[i];
+    d.allDay = value === 'allDay'; d.fixed = value !== 'flex';
+    if (value === 'fixed') { d.start = placed.start || '10:00'; d.end = placed.end || toClock(toMin(d.start) + (d.minutes || 60)); }
+    if (value === 'flex') { delete d.start; delete d.end; d.minutes ||= 60; }
+  }
+  if (field === 'start' && toMin(value) !== null) {
+    // Moving the start keeps the length; a shift may then end after midnight.
+    let len = (toMin(d.end) ?? toMin(value) + 60) - (toMin(d.start) ?? toMin(value));
+    if (len <= 0) len += 1440;
+    const end = toMin(value) + Math.max(15, len);
+    d.start = value; d.end = toClock(d.kind === 'shift' ? end % 1440 : Math.min(end, 1439));
+  }
+  // Only a shift may end after midnight; anything else needs an end after its start.
+  if (field === 'end' && toMin(value) !== null && (d.kind === 'shift' ? value !== d.start : toMin(value) > toMin(d.start))) d.end = value;
+  if (field === 'jobId') { d.jobId = value; d.title = `משמרת ב${state.jobs.find(j => j.id === value)?.name || ''}`; }
+  d.needs = (d.needs || []).filter(n => !(n === 'time' && (field === 'start' || field === 'mode')) && !(n === 'minutes' && field === 'minutes'));
+  refreshProposals();
+}
+function commitTell() {
+  const items = toItems(ui.proposals, uid), shifts = toShifts(ui.proposals, uid);
+  if ((!items.length && !shifts.length) || ui.proposals.some(p => p.status !== 'ok')) return;
+  const all = [...items, ...shifts];
+  mutate(() => {
+    state.items.push(...items);
+    state.shifts.push(...shifts);
+    // A whole day away (reserve duty, a trip) hides that day's classes, as shown on the review card.
+    for (const item of items.filter(i => i.allDay)) for (const c of classesOn(state, item.date)) c.skipDates.push(item.date);
+  }, `${all.length === 1 ? 'נכנס' : `${all.length} פריטים נכנסו`} ללו״ז${all.every(i => i.date === all[0].date) ? ` של ${dayLabel(all[0].date)}` : ''}.`);
+  // Show the day the items went to.
+  ui.day = all.map(i => i.date).sort()[0];
+  ui.tellText = ''; ui.drafts = null; ui.proposals = null; render();
+}
+
+// ── Microphone (the browser's speech recognition; the app itself sends nothing) ──
+function toggleMic() {
+  if (recognition) { recognition.stop(); return; }
+  const field = main.querySelector('#tell-text');
+  const before = field?.value.trim() || '';
+  recognition = new Recognition();
+  recognition.lang = 'he-IL'; recognition.continuous = true; recognition.interimResults = true;
+  recognition.onresult = event => {
+    let heard = ''; for (const r of event.results) heard += r[0].transcript;
+    ui.tellText = [before, heard.trim()].filter(Boolean).join(' ');
+    const f = main.querySelector('#tell-text'); if (f) f.value = ui.tellText;
+  };
+  recognition.onerror = event => {
+    ui.tellError = {'not-allowed': 'צריך לאשר גישה למיקרופון בדפדפן.', 'service-not-allowed': 'צריך לאשר גישה למיקרופון בדפדפן.', 'no-speech': 'לא שמעתי כלום. אפשר לנסות שוב.', network: 'הזיהוי הקולי צריך חיבור לאינטרנט.'}[event.error] || '';
+  };
+  recognition.onend = () => { recognition = null; ui.listening = false; render(); };
+  recognition.start(); ui.listening = true; render();
+}
+
+// ── Items in the schedule ──
+function toggleDone(id) {
+  const item = state.items.find(i => i.id === id); if (!item) return;
+  const minutes = item.allDay ? 0 : toMin(item.end) - toMin(item.start);
+  const goal = state.goals.find(g => g.id === item.goalId);
+  if (!item.done && goal && amountForSession(goal, minutes) === null) { ui.pending = {doneItem: id}; return open(logForm(goal, id)); }
+  mutate(() => {
+    const it = state.items.find(i => i.id === id); it.done = !it.done;
+    const course = state.courses.find(c => c.id === it.courseId), g = state.goals.find(x => x.id === it.goalId);
+    if (it.done) {
+      if (course && minutes) course.studyLog.push({date: it.date, minutes});
+      if (g) g.log.push({id: uid(), date: it.date, amount: amountForSession(g, minutes), itemId: it.id});
+    } else {
+      if (course) { const n = course.studyLog.findIndex(l => l.date === it.date && l.minutes === minutes); if (n >= 0) course.studyLog.splice(n, 1); }
+      if (g) g.log = g.log.filter(l => l.itemId !== it.id);
+    }
+  }, item.done ? 'סומן כלא בוצע.' : 'כל הכבוד!');
+}
+
+function moveOptions(item) {
+  const minutes = toMin(item.end) - toMin(item.start), from = item.date < localDate() ? localDate() : item.date;
+  const without = {...state, items: state.items.filter(i => i.id !== item.id)};
+  const same = alternatives(without, from, minutes, item.start, {limit: 3}).filter(o => !(o.date === item.date && o.start === item.start));
+  const later = [1, 2, 3].map(n => placeFlexible(without, addDays(from, n), minutes)).filter(Boolean);
+  return [...same, ...later].slice(0, 6);
+}
+
+function addFoundSlot(slot) {
+  const f = ui.find, course = f.type === 'course' && state.courses.find(c => c.id === f.id), goal = f.type === 'goal' && state.goals.find(g => g.id === f.id);
+  mutate(() => state.items.push({id: uid(), date: slot.date, start: slot.start, end: slot.end, done: false, fixed: false,
+    ...(course ? {title: `ללמוד ${course.name}`, kind: 'study', courseId: course.id} : {title: goal.title, kind: 'goal', goalId: goal.id})}), `נכנס ללו״ז: ${dayLabel(slot.date)}, ${slot.start}.`);
+  ui.find.slots = findTime(state, f.minutes); render();
+}
+
+// ── Clicks ──
+document.addEventListener('click', event => {
+  const routeButton = event.target.closest('[data-route]');
+  if (routeButton) { location.hash = routeButton.dataset.route; return; }
+  if (event.target.closest('.toast-undo')) {
+    if (undoState) { state = undoState; undoState = null; if (!ui.demo) saveState(state); render(); toast('השינוי בוטל.'); }
+    return;
+  }
+  const t = event.target.closest('[data-action]'); if (!t) return;
+  const id = t.dataset.id, action = t.dataset.action;
+  const actions = {
+    'close': close,
+    'dismiss-notice': () => { notice = ''; render(); },
+    'focus-tell': () => { if (route().name !== 'today') location.hash = 'today'; ui.proposals = null; render(); setTimeout(() => main.querySelector('#tell-text')?.focus(), 30); },
+    'tell': runTell,
+    'mic': toggleMic,
+    'edit-tell': () => { ui.proposals = null; render(); main.querySelector('#tell-text')?.focus(); },
+    'cancel-tell': () => { ui.tellText = ''; ui.drafts = null; ui.proposals = null; render(); },
+    'drop-proposal': () => { ui.drafts.splice(Number(t.dataset.p), 1); if (!ui.drafts.length) { ui.drafts = null; ui.proposals = null; render(); } else refreshProposals(); },
+    'pick-option': () => { const p = ui.proposals[Number(t.dataset.p)], o = p.options[Number(t.dataset.o)]; Object.assign(ui.drafts[Number(t.dataset.p)], {fixed: true, allDay: false, date: o.date, start: o.start, end: o.end, needs: []}); refreshProposals(); },
+    'commit': commitTell,
+    'pick-day': () => { ui.day = t.dataset.date === localDate() ? '' : t.dataset.date; render(); },
+    'toggle-done': () => toggleDone(id),
+    'delete-item': () => mutate(() => { state.items = state.items.filter(i => i.id !== id); for (const g of state.goals) g.log = g.log.filter(l => l.itemId !== id); }, 'נמחק.'),
+    'move-item': () => { const item = state.items.find(i => i.id === id); if (!item) return; ui.pending = {move: item.id, options: moveOptions(item)}; open(moveForm(item, ui.pending.options)); },
+    'move-to': () => { const o = ui.pending.options[Number(t.dataset.n)], itemId = ui.pending.move; close(); mutate(() => Object.assign(state.items.find(i => i.id === itemId), {date: o.date, start: o.start, end: o.end, done: false}), `הוזז ל־${o.start}.`); },
+    'demo': () => { saved = clone(state); state = demoState(); ui.demo = true; render(); },
+    'exit-demo': () => { state = saved || state; saved = null; ui.demo = false; undoState = null; render(); },
+    'help': () => open(helpContent()),
+    'settings': () => open(settingsForm(state.prefs)),
+    'export': () => {
+      const a = Object.assign(document.createElement('a'), {href: URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], {type: 'application/json'})), download: `StudyFlow-${localDate()}.json`});
+      a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); toast('הגיבוי מוכן.');
+    },
+    'confirm-import': () => { const next = ui.pending?.import; close(); if (next) mutate(() => { state = next; }, 'הגיבוי נטען.'); },
+    'week': () => { const step = Number(t.dataset.step); ui.week = step ? addDays(ui.week || weekStart(localDate()), step) : ''; render(); },
+    // Studies
+    'new-class': () => open(classForm(state, {}, t.dataset.course || '')),
+    'edit-class': () => open(classForm(state, state.classes.find(c => c.id === id) || {})),
+    'delete-class': () => { close(); mutate(() => { state.classes = state.classes.filter(c => c.id !== id); }, 'השיעור נמחק.'); },
+    'new-course': () => open(courseForm()),
+    'edit-course': () => open(courseForm(state.courses.find(c => c.id === id))),
+    'delete-course': () => { close(); mutate(() => { state.courses = state.courses.filter(c => c.id !== id); }, 'הקורס נמחק.'); location.hash = 'studies'; },
+    'add-topics': () => open(topicsForm(state.courses.find(c => c.id === id))),
+    'cycle-topic': () => mutate(() => { const topic = state.courses.find(c => c.id === t.dataset.course)?.topics.find(x => x.id === id); if (topic) topic.status = {new: 'learning', learning: 'done', done: 'new'}[topic.status]; }),
+    'delete-topic': () => mutate(() => { const c = state.courses.find(x => x.id === t.dataset.course); c.topics = c.topics.filter(x => x.id !== id); }, 'הנושא נמחק.'),
+    'toggle-deadline': () => mutate(() => { const d = state.courses.find(c => c.id === t.dataset.course)?.deadlines.find(x => x.id === id); if (d) d.done = !d.done; }),
+    'delete-deadline': () => mutate(() => { const c = state.courses.find(x => x.id === t.dataset.course); c.deadlines = c.deadlines.filter(x => x.id !== id); }, 'נמחק.'),
+    // Find time (course or goal page)
+    'find-time': () => {
+      const goal = t.dataset.type === 'goal' && state.goals.find(g => g.id === id);
+      const minutes = goal ? goal.sessionMinutes : 60;
+      ui.find = {type: t.dataset.type, id, minutes, slots: findTime(state, minutes)}; render();
+      main.querySelector('.find-panel')?.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+    },
+    'find-length': () => { ui.find.minutes = Number(t.dataset.minutes); ui.find.slots = findTime(state, ui.find.minutes); render(); },
+    'take-slot': () => addFoundSlot(ui.find.slots[Number(t.dataset.n)]),
+    'close-find': () => { ui.find = null; render(); },
+    // Work
+    'new-job': () => open(jobForm()),
+    'edit-job': () => open(jobForm(state.jobs.find(j => j.id === id))),
+    'delete-job': () => { close(); mutate(() => { state.jobs = state.jobs.filter(j => j.id !== id); state.shifts = state.shifts.filter(s => s.jobId !== id); }, 'מקום העבודה נמחק.'); location.hash = 'work'; },
+    'new-shift': () => state.jobs.length ? open(shiftForm(state, {}, t.dataset.job || '')) : (open(jobForm()), toast('קודם מוסיפים את העסק ואת השכר לשעה.')),
+    'week-shifts': () => {
+      if (!state.jobs.length) return open(jobForm());
+      const jobId = sheet.querySelector('[name=jobId]')?.value || t.dataset.job || state.jobs[0].id;
+      ui.weekTimes = null; open(weekShiftsForm(state, jobId, t.dataset.week || workWeek(), lastTimes(jobId), thisWorkWeek()));
+    },
+    'edit-shift': () => { const s = state.shifts.find(x => x.id === id); if (s) open(shiftForm(state, s)); },
+    'delete-shift': () => { close(); mutate(() => { state.shifts = state.shifts.filter(s => s.id !== id); }, 'המשמרת נמחקה.'); },
+    'month': () => {
+      const [y, m] = (ui.month || localDate().slice(0, 7)).split('-').map(Number), d = new Date(y, m - 1 + Number(t.dataset.step), 1);
+      ui.month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; render();
+    },
+    // Goals
+    'new-goal': () => open(goalForm()),
+    'edit-goal': () => open(goalForm(state.goals.find(g => g.id === id))),
+    'delete-goal': () => { close(); mutate(() => { state.goals = state.goals.filter(g => g.id !== id); }, 'המטרה נמחקה.'); location.hash = 'goals'; },
+    'log-goal': () => { const g = state.goals.find(x => x.id === id); if (!g) return; if (g.unit === 'times') mutate(() => g.log.push({id: uid(), date: localDate(), amount: 1}), 'נרשם. כל הכבוד!'); else open(logForm(g)); },
+    'delete-log': () => mutate(() => { const g = state.goals.find(x => x.id === t.dataset.goal); g.log = g.log.filter(l => l.id !== id); }, 'הרישום נמחק.'),
+  };
+  actions[action]?.();
+});
+
+// ── Typing in the review card ──
+document.addEventListener('input', event => {
+  const el = event.target;
+  if (el.id === 'tell-text') ui.tellText = el.value;
+  if (el.dataset.p !== undefined && el.dataset.field === 'title') editDraft(Number(el.dataset.p), 'title', el.value);
+  if (el.form?.dataset.form === 'topics' && el.name === 'text') previewSyllabus(el.form);
+});
+document.addEventListener('change', async event => {
+  const el = event.target;
+  if (el.dataset.p !== undefined && el.dataset.field !== 'title') return editDraft(Number(el.dataset.p), el.dataset.field, el.value);
+  if (el.matches('[data-syllabus]')) {
+    const form = el.closest('form'), file = el.files[0]; if (!file) return;
+    try {
+      if (file.size > 5_000_000) throw new Error('הקובץ גדול מדי.');
+      const text = await fileText(file);
+      form.elements.text.value = [form.elements.text.value.trim(), text.trim()].filter(Boolean).join('\n');
+      previewSyllabus(form); formError(form, '');
+    } catch (e) { formError(form, e.message); }
+    el.value = '';
+  }
+  if (el.matches('[data-ics]')) {
+    const file = el.files[0]; el.value = ''; if (!file) return;
+    if (file.size > 3_000_000) return toast('הקובץ גדול מדי.');
+    const parsed = parseICS(await file.text());
+    if (!parsed.classes.length && !parsed.once.length) return toast('לא מצאתי אירועים בקובץ. צריך קובץ יומן (‎.ics).');
+    ui.pending = {ics: parsed}; open(icsPreview(parsed));
+  }
+  if (el.matches('[data-import]')) {
+    const file = el.files[0]; if (!file) return;
+    try {
+      if (file.size > 3_000_000) throw new Error('size');
+      const raw = JSON.parse(await file.text());
+      const next = raw.version === 2 ? validateState(raw) : migrateV1(raw);
+      ui.pending = {import: next};
+      open(`<div class="sheet-top"><h2 id="dialog-title">לטעון את הגיבוי?</h2></div><p>בגיבוי יש ${next.courses.length} קורסים, ${next.classes.length} שיעורים, ${next.goals.length} מטרות ו־${next.items.length} פריטים בלו״ז. הוא יחליף את מה שיש עכשיו במכשיר. אפשר לבטל מיד אחרי.</p><button class="primary submit-button" data-action="confirm-import">לטעון</button><button class="text-button" data-action="close">ביטול</button>`);
+    } catch { toast('לא הצלחתי לקרוא את הקובץ. צריך קובץ גיבוי של StudyFlow.'); }
+  }
+  // Week of shifts: a ticked day lights up and takes the hours chosen last.
+  if (el.form?.dataset.form === 'week-shifts') {
+    const row = el.closest('[data-week-row]');
+    if (el.name === 'day') {
+      row.classList.toggle('is-on', el.checked);
+      if (el.checked && ui.weekTimes) { row.querySelector('[name^=start-]').value = ui.weekTimes.start; row.querySelector('[name^=end-]').value = ui.weekTimes.end; }
+    } else if (row) {
+      ui.weekTimes = {start: row.querySelector('[name^=start-]').value, end: row.querySelector('[name^=end-]').value};
+      const box = row.querySelector('[name=day]'); if (!box.checked) { box.checked = true; row.classList.add('is-on'); }
+    }
+  }
+  if (el.form?.dataset.form === 'goal' && el.name === 'unit') el.form.querySelector('[data-unit-help]').textContent = el.value === 'minutes' ? 'בשעות' : '';
+});
+function previewSyllabus(form) {
+  const {topics, deadlines} = readSyllabus(form.elements.text.value, {today: localDate()});
+  form.querySelector('[data-syllabus-preview]').textContent = topics.length || deadlines.length ? `זיהיתי ${topics.length} נושאים${deadlines.length ? ` ו־${deadlines.length} מבחנים או הגשות` : ''}.` : '';
+}
+
+// ── Forms ──
+const findCourse = name => state.courses.find(c => c.name.trim().toLowerCase() === name.trim().toLowerCase());
+document.addEventListener('submit', event => {
+  const form = event.target, kind = form.dataset.form; if (!kind) return;
+  event.preventDefault();
+  const fd = new FormData(form), get = k => String(fd.get(k) ?? '').trim();
+  try {
+    if (kind === 'class') {
+      const title = get('title'), days = fd.getAll('days').map(Number), start = get('start'), end = get('end');
+      if (!title) throw Error('צריך שם לקורס.');
+      if (!days.length) throw Error('בוחרים לפחות יום אחד.');
+      if (toMin(start) === null || toMin(end) === null || toMin(end) <= toMin(start)) throw Error('שעת הסיום צריכה להיות אחרי שעת ההתחלה.');
+      close();
+      mutate(() => {
+        let course = findCourse(title);
+        if (!course) { course = {id: uid(), name: title, topics: [], deadlines: [], studyLog: []}; state.courses.push(course); }
+        const c = {id: form.dataset.id || uid(), title: course.name, courseId: course.id, days, start, end, location: get('location'), skipDates: state.classes.find(x => x.id === form.dataset.id)?.skipDates || [], ...(validDate(get('until')) ? {until: get('until')} : {})};
+        state.classes = form.dataset.id ? state.classes.map(x => x.id === c.id ? c : x) : [...state.classes, c];
+      }, 'נשמר במערכת השעות.');
+    }
+    if (kind === 'ics') {
+      const picks = new Set(fd.getAll('pick')), makeCourses = fd.has('courses'), parsed = ui.pending.ics;
+      close();
+      mutate(() => {
+        parsed.classes.forEach((c, i) => {
+          if (!picks.has(`c${i}`)) return;
+          const name = courseNameOf(c.title);
+          let course = findCourse(name);
+          if (!course && makeCourses) { course = {id: uid(), name, topics: [], deadlines: [], studyLog: []}; state.courses.push(course); }
+          state.classes.push({...c, id: uid(), title: course ? course.name : c.title, ...(course ? {courseId: course.id} : {})});
+        });
+        parsed.once.forEach((o, i) => { if (picks.has(`o${i}`)) state.items.push({id: uid(), ...o, kind: 'event', fixed: true, done: false}); });
+      }, 'מערכת השעות נטענה.');
+    }
+    if (kind === 'course') {
+      const name = get('name'); if (!name) throw Error('צריך שם לקורס.');
+      const exam = get('examDate'); close();
+      mutate(() => {
+        const existing = state.courses.find(c => c.id === form.dataset.id);
+        if (existing) { existing.name = name; existing.examDate = validDate(exam) ? exam : undefined; for (const c of state.classes) if (c.courseId === existing.id) c.title = name; }
+        else state.courses.push({id: uid(), name, ...(validDate(exam) ? {examDate: exam} : {}), topics: [], deadlines: [], studyLog: []});
+      }, 'הקורס נשמר.');
+    }
+    if (kind === 'topics') {
+      const {topics, deadlines} = readSyllabus(get('text'), {today: localDate()});
+      if (!topics.length && !deadlines.length) throw Error('לא מצאתי נושאים. כל נושא בשורה נפרדת.');
+      close();
+      mutate(() => {
+        const c = state.courses.find(x => x.id === form.dataset.id), titles = new Set(c.topics.map(t => t.title));
+        c.topics.push(...topics.filter(t => !titles.has(t)).map(title => ({id: uid(), title, status: 'new'})));
+        c.deadlines.push(...deadlines.map(d => ({id: uid(), ...d, done: false})));
+      }, `נוספו ${topics.length} נושאים${deadlines.length ? ` ו־${deadlines.length} מועדים` : ''}.`);
+    }
+    if (kind === 'deadline') {
+      const title = get('title'), date = get('date');
+      if (!title || !validDate(date)) return;
+      mutate(() => state.courses.find(c => c.id === form.dataset.course).deadlines.push({id: uid(), title, date, done: false}), 'נוסף.');
+    }
+    if (kind === 'goal') {
+      const title = get('title'), unit = get('unit') || 'times', target = Number(get('target')) * (unit === 'minutes' ? 60 : 1);
+      if (!title) throw Error('צריך שם למטרה.');
+      if (!Number.isFinite(target) || target <= 0) throw Error('היעד צריך להיות מספר גדול מאפס.');
+      close();
+      const g = {title, type: get('type') || 'sport', unit, noun: get('noun'), target, period: get('period') || 'week', sessionMinutes: Number(get('sessionMinutes')) || 60};
+      mutate(() => {
+        const existing = state.goals.find(x => x.id === form.dataset.id);
+        if (existing) Object.assign(existing, g); else state.goals.push({id: uid(), ...g, log: []});
+      }, 'המטרה נשמרה.');
+    }
+    if (kind === 'log') {
+      const amount = Number(get('amount')), date = get('date'), itemId = form.dataset.item;
+      if (!Number.isFinite(amount) || amount <= 0 || !validDate(date)) throw Error('צריך כמות ותאריך.');
+      close();
+      mutate(() => {
+        state.goals.find(g => g.id === form.dataset.id).log.push({id: uid(), date, amount, ...(itemId ? {itemId} : {})});
+        if (itemId) { const it = state.items.find(i => i.id === itemId); if (it) it.done = true; }
+      }, 'נרשם. כל הכבוד!');
+    }
+    if (kind === 'move') {
+      const item = state.items.find(i => i.id === form.dataset.id), date = get('date'), start = get('start');
+      if (!item || !validDate(date) || toMin(start) === null) throw Error('בוחרים יום ושעה.');
+      const end = toClock(Math.min(toMin(start) + toMin(item.end) - toMin(item.start), 1439));
+      const hits = conflictsFor(state, {...item, date, start, end});
+      if (hits.length) throw Error(`בזמן הזה יש כבר: ${[...new Set(hits.map(h => h.title))].join(', ')}. אפשר לבחור אחד מהזמנים הפנויים למעלה.`);
+      close();
+      mutate(() => Object.assign(item, {date, start, end, done: false}), `הוזז ל־${start}.`);
+    }
+    if (kind === 'job') {
+      const name = get('name'), wage = Number(get('wage'));
+      if (!name) throw Error('צריך שם למקום העבודה.');
+      if (!Number.isFinite(wage) || wage < 0) throw Error('השכר לשעה צריך להיות מספר.');
+      close();
+      const job = {name, wage, overtime: fd.has('overtime')}, existing = state.jobs.find(j => j.id === form.dataset.id), newId = uid();
+      mutate(() => { if (existing) Object.assign(state.jobs.find(j => j.id === existing.id), job); else state.jobs.push({id: newId, ...job}); }, existing ? 'נשמר.' : '');
+      // A new business goes straight on to this week's shifts.
+      if (!existing) { ui.weekTimes = null; open(weekShiftsForm(state, newId, workWeek(), lastTimes(newId), thisWorkWeek())); }
+    }
+    if (kind === 'week-shifts') {
+      const jobId = get('jobId'), days = fd.getAll('day');
+      if (!days.length) throw Error('מסמנים לפחות יום אחד.');
+      const planned = days.map(date => ({jobId, date, start: get(`start-${date}`), end: get(`end-${date}`), breakMinutes: 0, tips: 0}));
+      if (planned.some(s => s.start === s.end)) throw Error('בכל משמרת, שעת הסיום צריכה להיות שונה מההתחלה.');
+      const clash = s => shiftSegments(s).some(seg => busyOn(state, seg.date).some(b => seg.start < b.end && seg.end > b.start));
+      const free = planned.filter(s => !clash(s)), busy = planned.filter(clash);
+      if (!free.length) throw Error('כל המשמרות שסימנת מתנגשות עם משהו אחר ביומן. אפשר לשנות שעות.');
+      close();
+      mutate(() => state.shifts.push(...free.map(s => ({id: uid(), ...s}))),
+        `${free.length === 1 ? 'משמרת אחת נכנסה' : `${free.length} משמרות נכנסו`} ליומן${busy.length ? `. ${busy.map(s => dateLabel(s.date)).join(', ')} לא נכנסו כי יש שם כבר משהו` : ''}.`);
+      ui.week = ''; location.hash = 'calendar';
+    }
+    if (kind === 'shift') {
+      const jobId = get('jobId'), date = get('date'), start = get('start'), end = get('end'), editing = form.dataset.id;
+      if (!state.jobs.some(j => j.id === jobId)) throw Error('בוחרים מקום עבודה.');
+      if (!validDate(date)) throw Error('בוחרים יום.');
+      if (start === end) throw Error('שעת הסיום צריכה להיות שונה משעת ההתחלה.');
+      const base = {jobId, start, end, breakMinutes: Number(get('breakMinutes')) || 0, tips: Number(get('tips')) || 0};
+      // Never on top of a class or anything else; for a weekly repeat, busy dates are skipped and reported.
+      const collide = date => [...new Set(shiftSegments({...base, date}).flatMap(seg =>
+        busyOn(state, seg.date, {ignoreId: editing}).filter(b => seg.start < b.end && seg.end > b.start).map(b => b.title)))];
+      const dates = editing ? [date] : repeatDates(date, Number(get('weeks')) || 1);
+      const free = dates.filter(d => !collide(d).length), busy = dates.filter(d => collide(d).length);
+      if (!free.length) throw Error(`בזמן הזה יש כבר: ${collide(dates[0]).join(', ')}. אפשר לבחור שעות אחרות.`);
+      close();
+      mutate(() => {
+        if (editing) Object.assign(state.shifts.find(s => s.id === editing), base, {date});
+        else state.shifts.push(...free.map(d => ({id: uid(), ...base, date: d})));
+      }, editing ? 'המשמרת עודכנה.' : `${free.length === 1 ? 'המשמרת נוספה' : `נוספו ${free.length} משמרות`} ללו״ז${busy.length ? `. ${busy.length} לא נוספו כי מתנגשות עם משהו אחר (${busy.map(d => dateLabel(d)).slice(0, 3).join(', ')})` : ''}.`);
+    }
+    if (kind === 'settings') {
+      const dayStart = get('dayStart'), dayEnd = get('dayEnd');
+      if (toMin(dayEnd) <= toMin(dayStart)) throw Error('סוף היום צריך להיות אחרי ההתחלה.');
+      close();
+      mutate(() => { state.prefs = {dayStart, dayEnd, breakMinutes: Number(get('breakMinutes'))}; }, 'ההעדפות נשמרו.');
+    }
+  } catch (e) { formError(form, e.message); }
+});
+
+// Enter in the "tell me" box sends it; Shift+Enter adds a line.
+document.addEventListener('keydown', e => { if (e.target.id === 'tell-text' && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); runTell(); } });
+window.addEventListener('hashchange', () => { ui.find = null; render(); window.scrollTo(0, 0); main.focus({preventScroll: true}); });
+// Coming back to the app later in the day refreshes "now" (free time, greetings).
+document.addEventListener('visibilitychange', () => { if (!document.hidden && !sheet.open) render(); });
+render();

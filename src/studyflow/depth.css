@@ -1,0 +1,9 @@
+/* Small pieces of the recurring-event form and the completion animation. */
+.series-end{font-size:13px;line-height:1.8;color:#657b82;margin:0 0 10px}
+#repeat-summary{font-size:13px;line-height:1.9;color:#315f64;border-inline-start:3px solid #55ab9f;padding-inline-start:12px;margin-top:18px}
+.form-kind-help{font-size:13px;line-height:1.8;color:#617985;margin:-8px 0 18px}
+.stop-series-button{display:block;margin:14px auto 0;color:#9a553d}
+.completion-burst{position:fixed;z-index:30;pointer-events:none;width:8px;height:8px;border-radius:50%;background:#43b9a7;animation:completion-pop 600ms cubic-bezier(.15,.6,.35,1) both}
+.completion-burst:nth-of-type(even){background:#e8b379}
+@keyframes completion-pop{0%{opacity:1;transform:translate(-50%,-50%) scale(.5)}100%{opacity:0;transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy))) scale(.2)}}
+@media(prefers-reduced-motion:reduce){.completion-burst{display:none}}
