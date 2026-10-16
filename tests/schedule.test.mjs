@@ -1,0 +1,79 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createState, validateState} from '../src/studyflow/store.mjs';
+import {freeRanges, placeFlexible, conflictsFor, alternatives, findTime, classesOn} from '../src/studyflow/schedule.mjs';
+import {propose, ready, toItems} from '../src/studyflow/propose.mjs';
+import {toMin} from '../src/studyflow/util.mjs';
+
+const morning = new Date(2026, 9, 18, 7); // Sunday 18.10.2026, before the day starts
+const base = () => validateState({...createState(),
+  courses: [{id: 'stats', name: 'סטטיסטיקה'}],
+  classes: [{id: 'c1', title: 'סטטיסטיקה', courseId: 'stats', days: [0, 2], start: '10:00', end: '12:00'}],
+  items: [{id: 'dinner', title: 'ארוחה', date: '2026-10-18', start: '19:00', end: '20:30', kind: 'event', fixed: true}]});
+let n = 0; const id = () => `new-${++n}`;
+const overlaps = (a, b) => toMin(a.start) < toMin(b.end) && toMin(b.start) < toMin(a.end);
+
+test('free time skips classes and items, with a break on each side', () => {
+  const ranges = freeRanges(base(), '2026-10-18', {now: morning});
+  assert.deepEqual(ranges.map(r => [r.start, r.end]), [[480, 590], [730, 1130], [1240, 1320]]);
+  assert.deepEqual(freeRanges(base(), '2026-10-17', {now: morning}), [], 'past days have no free time');
+});
+
+test('the timetable respects start dates, end dates and skipped days', () => {
+  const s = base();
+  s.classes[0].until = '2026-10-19';
+  s.classes[0].skipDates = ['2026-10-18'];
+  assert.equal(classesOn(s, '2026-10-18').length, 0);
+  assert.equal(classesOn(s, '2026-10-20').length, 0);
+});
+
+test('flexible work goes in the earliest fitting gap, or in the part of day asked for', () => {
+  assert.equal(placeFlexible(base(), '2026-10-18', 120, {now: morning}).start, '12:10', 'two hours do not fit before the class');
+  assert.equal(placeFlexible(base(), '2026-10-18', 60, {now: morning}).start, '08:00');
+  assert.equal(placeFlexible(base(), '2026-10-18', 60, {now: morning, part: 'evening'}).start, '17:00');
+  assert.equal(placeFlexible(base(), '2026-10-18', 600, {now: morning}), null);
+});
+
+test('a fixed time on top of a class is a conflict, with free alternatives the same day', () => {
+  const s = base(), item = {id: 'x', date: '2026-10-18', start: '11:00', end: '12:00'};
+  assert.deepEqual(conflictsFor(s, item).map(c => c.title), ['סטטיסטיקה']);
+  const options = alternatives(s, '2026-10-18', 60, '11:00', {now: morning});
+  assert.equal(options.length, 3);
+  for (const o of options) assert.equal(conflictsFor(s, {id: 'x', ...o}).length, 0);
+  for (const o of options) for (const p of options) if (o !== p) assert.ok(Math.abs(toMin(o.start) - toMin(p.start)) >= 45);
+});
+
+test('the review never overlaps anything, including the new items themselves', () => {
+  const s = base();
+  const result = propose(s, [
+    {title: 'פגישה', date: '2026-10-18', fixed: true, start: '19:30', end: '20:00', kind: 'event'},
+    {title: 'ריצה', date: '2026-10-18', fixed: true, start: '13:00', end: '14:00', kind: 'goal'},
+    {title: 'ללמוד', date: '2026-10-18', fixed: false, minutes: 120, kind: 'study'},
+    {title: 'לקרוא', date: '2026-10-18', fixed: false, minutes: 60, kind: 'study'},
+  ], morning);
+  assert.equal(result[0].status, 'conflict');
+  assert.deepEqual(result[0].conflicts, ['ארוחה']);
+  assert.equal(ready(result), false, 'nothing is saved while a conflict is open');
+  const placed = result.filter(r => r.status === 'ok');
+  for (const a of placed) for (const b of placed) if (a !== b) assert.ok(!overlaps(a, b), `${a.title} overlaps ${b.title}`);
+  assert.equal(result[3].start, '08:00');
+  assert.equal(result[2].start, '14:10', 'fitted after the fixed run, with a break');
+});
+
+test('work with a deadline looks for room on later days, and saved items carry their links', () => {
+  const s = base();
+  s.prefs.dayEnd = '09:00';
+  const [p] = propose(s, [{title: 'סיכום', date: '2026-10-18', deadline: '2026-10-20', fixed: false, minutes: 60, kind: 'study', courseId: 'stats'}], morning);
+  assert.equal(p.status, 'ok');
+  assert.equal(p.date, '2026-10-18');
+  const [late] = propose(s, [{title: 'ארוך', date: '2026-10-18', deadline: '2026-10-19', fixed: false, minutes: 120, kind: 'task'}], morning);
+  assert.equal(late.status, 'noroom');
+  const [saved] = toItems([p], id);
+  assert.deepEqual({courseId: saved.courseId, kind: saved.kind, done: saved.done}, {courseId: 'stats', kind: 'study', done: false});
+});
+
+test('find time offers free slots on the coming days', () => {
+  const slots = findTime(base(), 90, {from: '2026-10-18', days: 3, now: morning});
+  assert.ok(slots.length >= 3);
+  for (const slot of slots) assert.equal(conflictsFor(base(), {id: 'x', ...slot}).length, 0);
+});
