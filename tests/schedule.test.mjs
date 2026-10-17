@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createState, validateState} from '../src/studyflow/store.mjs';
-import {freeRanges, placeFlexible, conflictsFor, alternatives, findTime, classesOn} from '../src/studyflow/schedule.mjs';
+import {freeRanges, placeFlexible, conflictsFor, alternatives, findTime, classesOn, planRest} from '../src/studyflow/schedule.mjs';
+import {goalStats} from '../src/studyflow/progress.mjs';
 import {propose, ready, toItems} from '../src/studyflow/propose.mjs';
 import {toMin} from '../src/studyflow/util.mjs';
 
@@ -76,4 +77,28 @@ test('find time offers free slots on the coming days', () => {
   const slots = findTime(base(), 90, {from: '2026-10-18', days: 3, now: morning});
   assert.ok(slots.length >= 3);
   for (const slot of slots) assert.equal(conflictsFor(base(), {id: 'x', ...slot}).length, 0);
+});
+
+test('what is left of a weekly goal is spread over free days, skipping days already done or planned', () => {
+  const s = base();
+  s.goals = [{id: 'gym', title: 'חדר כושר', unit: 'times', target: 3, period: 'week', sessionMinutes: 60, log: [{id: 'l1', date: '2026-10-18', amount: 1}]}];
+  s.items.push({id: 'g1', title: 'חדר כושר', date: '2026-10-20', start: '18:00', end: '19:00', kind: 'goal', goalId: 'gym'});
+  const plan = planRest(validateState(s), validateState(s).goals[0], {today: '2026-10-18', now: morning});
+  assert.equal(plan.planned, 1);
+  assert.equal(plan.rest, 1);
+  assert.equal(plan.slots.length, 1);
+  assert.ok(!['2026-10-18', '2026-10-20'].includes(plan.slots[0].date));
+  const two = planRest(s, {...s.goals[0], log: []}, {today: '2026-10-18', now: morning});
+  assert.equal(two.slots.length, 2);
+  assert.equal(new Set(two.slots.map(x => x.date)).size, 2, 'one session a day');
+});
+
+test('goal stats count weeks on target in a row', () => {
+  const goal = {target: 2, log: ['2026-10-04', '2026-10-06', '2026-10-11', '2026-10-12', '2026-10-18'].map((date, i) => ({id: `${i}`, date, amount: 1}))};
+  const s = goalStats(goal, '2026-10-19');
+  assert.equal(s.streak, 2, 'this week is not reached yet, so the run counts the two weeks before');
+  assert.equal(s.best, 2);
+  assert.equal(s.total, 5);
+  assert.equal(s.history.length, 8);
+  assert.deepEqual(s.days.filter(d => d.done).map(d => d.date), ['2026-10-18']);
 });
