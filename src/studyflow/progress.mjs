@@ -34,6 +34,22 @@ export function goalSummary(goal, today = localDate()) {
 }
 const round = n => Math.round(n * 10) / 10;
 
+// The bigger picture of a goal: the last 8 weeks, the run of weeks on target, the best week,
+// everything done since the start, and the days this week something was done.
+export function goalStats(goal, today = localDate()) {
+  const thisWeek = weekStart(today);
+  const byWeek = new Map();
+  for (const l of goal.log) { const w = weekStart(l.date); byWeek.set(w, (byWeek.get(w) || 0) + l.amount); }
+  const weekTotal = w => byWeek.get(w) || 0;
+  const history = Array.from({length: 8}, (_, i) => { const week = addDays(thisWeek, -7 * (7 - i)); return {week, done: weekTotal(week)}; });
+  // The current week counts once it is reached; until then the run is measured up to last week.
+  let streak = 0, week = weekTotal(thisWeek) >= goal.target ? thisWeek : addDays(thisWeek, -7);
+  while (weekTotal(week) >= goal.target) { streak++; week = addDays(week, -7); }
+  const logged = new Set(goal.log.filter(l => l.date >= thisWeek && l.date <= addDays(thisWeek, 6)).map(l => l.date));
+  return {history, streak, best: Math.max(0, ...byWeek.values()), total: goal.log.reduce((n, l) => n + l.amount, 0),
+    days: Array.from({length: 7}, (_, i) => ({date: addDays(thisWeek, i), done: logged.has(addDays(thisWeek, i))}))};
+}
+
 // How much one finished session adds to a goal.
 export function amountForSession(goal, minutes) {
   return goal.unit === 'times' ? 1 : goal.unit === 'minutes' ? minutes : null;

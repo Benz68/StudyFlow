@@ -1,7 +1,7 @@
 // Screen templates. Every piece of text the person typed goes through esc().
-import {esc, icon, duration, localDate, addDays, weekStart, dateLabel, dayLabel, fullDayLabel, greeting, DAY_NAMES, toMin, timeSelect} from './util.mjs';
+import {esc, icon, duration, localDate, addDays, weekStart, dateLabel, dayLabel, fullDayLabel, greeting, DAY_NAMES, DAY_SHORT, toMin, toClock, timeSelect, soft, PALETTE} from './util.mjs';
 import {dayAgenda, plannedMinutes} from './schedule.mjs';
-import {courseProgress, goalProgress, goalSummary, unitLabel} from './progress.mjs';
+import {courseProgress, goalProgress, goalSummary, unitLabel, goalStats} from './progress.mjs';
 import {monthSummary, shiftPay, money, hoursLabel, shiftLabel, overnight} from './work.mjs';
 
 const KIND = {study: 'לימודים', task: 'משימה', goal: 'מטרה אישית', event: 'אירוע', other: 'כללי', shift: 'משמרת'};
@@ -162,7 +162,7 @@ export function entryRow(e, state, now = new Date()) {
   if (e.type === 'shift') {
     const shift = state.shifts.find(s => s.id === e.id), job = state.jobs.find(j => j.id === e.jobId);
     const {hours, pay} = shiftPay(shift, job);
-    return `<article class="entry is-shift"><div class="time"><b>${e.continued ? '00:00' : shift.start}</b><span>${e.overnight ? '24:00' : shift.end}</span></div><div class="entry-card">
+    return `<article class="entry is-shift"><div class="time"><b>${e.continued ? '00:00' : shift.start}</b><span>${e.overnight ? '24:00' : shift.end}</span></div><div class="entry-card" style="${tint(job?.color)}">
       <span class="entry-kind">משמרת${e.continued ? ' · המשך מאתמול' : e.overnight ? ' · נגמרת למחרת ב־' + shift.end : ''} · ${hoursLabel(hours)} · כ־${money(pay)}</span>
       <h3><a href="#job/${esc(e.jobId)}">${esc(e.title)}</a></h3>
       <div class="entry-actions"><button class="text-button" data-action="edit-shift" data-id="${esc(e.id)}">עריכה</button><button class="text-button muted" data-action="delete-shift" data-id="${esc(e.id)}">למחוק</button></div></div></article>`;
@@ -212,22 +212,25 @@ export function studies(state) {
     const list = state.classes.filter(c => c.days.includes(d)).sort((a, b) => a.start.localeCompare(b.start));
     return `<div class="tt-day"><h3>${DAY_NAMES[d]}</h3>${list.map(c => `<button class="tt-class" data-action="edit-class" data-id="${esc(c.id)}"><bdi dir="ltr">${c.start}–${c.end}</bdi><b>${esc(c.title)}</b>${c.location ? `<small>${esc(c.location)}</small>` : ''}</button>`).join('') || '<p class="tt-free">פנוי</p>'}</div>`;
   }).join('');
-  const cards = state.courses.map(c => courseCard(c)).join('');
+  const cards = state.courses.map((c, i) => courseCard(c, i)).join('');
+  const importButton = `<label class="text-button import-label">${icon('file')} מקובץ יומן<input type="file" data-ics accept=".ics,text/calendar"></label>`;
   return `
-  ${heading('לימודים', 'מערכת השעות והקורסים')}
+  ${heading('לימודים')}
   <section>
-    ${section('מערכת השעות', 'השיעורים חוזרים כל שבוע. בזמן הזה לא נשבץ כלום.', `<label class="text-button import-label">${icon('file')} ייבוא מקובץ יומן<input type="file" data-ics accept=".ics,text/calendar"></label><button class="primary small" data-action="new-class">${icon('plus')} שיעור</button>`)}
-    ${state.classes.length ? `<div class="timetable">${table}</div>` : `<div class="hint-card"><p><b>הדרך הכי מהירה:</b> ברוב מערכות האוניברסיטה וב־Google Calendar אפשר לייצא את מערכת השעות לקובץ יומן (‎.ics). טוענים אותו כאן, וכל השיעורים נכנסים.</p><p>או מוסיפים שיעור בכמה לחיצות: שם, ימים ושעות.</p></div>`}
+    ${section('מערכת השעות', '', state.classes.length ? `${importButton}<button class="primary small" data-action="new-class">${icon('plus')} שיעור</button>` : '')}
+    ${state.classes.length ? `<div class="timetable">${table}</div>`
+      : `<div class="empty-actions"><button class="primary" data-action="new-class">${icon('plus')} להוסיף שיעור</button>${importButton}</div>`}
   </section>
   <section>
-    ${section('הקורסים', 'לכל קורס יש עמוד משלו: סילבוס, נושאים, מבחנים והתקדמות.', `<button class="primary small" data-action="new-course">${icon('plus')} קורס</button>`)}
-    ${cards ? `<div class="card-grid">${cards}</div>` : '<div class="day-empty"><p>קורסים נוצרים לבד כשמוסיפים שיעור, או בכפתור למעלה.</p></div>'}
+    ${section('הקורסים', '', `<button class="text-button" data-action="new-course">${icon('plus')} קורס</button>`)}
+    ${cards ? `<div class="card-grid">${cards}</div>` : '<p class="field-help">קורס נוצר לבד כשמוסיפים שיעור.</p>'}
   </section>`;
 }
 
-function courseCard(c, date = localDate()) {
+function courseCard(c, index, date = localDate()) {
   const p = courseProgress(c, date);
-  return `<a class="big-card" href="#course/${esc(c.id)}">
+  return `<a class="big-card note" href="#course/${esc(c.id)}" style="${tint(PALETTE[(index + 2) % PALETTE.length])}">
+    <span class="tape" aria-hidden="true"></span>
     <div class="big-card-top"><h3>${esc(c.name)}</h3><b class="big-number">${p.total ? `${p.percent}%` : '—'}</b></div>
     ${bar(p.percent, `${p.percent}% התקדמות`)}
     <p>${p.total ? `${p.done} מתוך ${p.total} נושאים הושלמו` : 'עוד אין נושאים'}${p.next ? ` · הבא בתור: ${esc(p.next.title)}` : ''}</p>
@@ -289,6 +292,17 @@ function findPanel(ui, type, id) {
   const f = ui.find;
   if (!f || f.type !== type || f.id !== id) return '';
   const slots = f.slots.map((s, n) => `<button class="slot" data-action="take-slot" data-n="${n}">${esc(dayLabel(s.date))} · <bdi dir="ltr">${s.start}–${s.end}</bdi></button>`).join('');
+  if (f.rest !== undefined) {
+    const planned = f.planned ? `<p class="field-help">${f.planned === 1 ? 'פעם אחת כבר בלו״ז' : `${f.planned} פעמים כבר בלו״ז`}.</p>` : '';
+    return `<section class="find-panel" aria-label="שיבוץ מה שנשאר">
+    ${planned}
+    ${!f.rest ? '<p class="field-help">כל מה שנשאר השבוע כבר בלו״ז.</p>'
+      : slots ? `<p class="field-help">${f.slots.length < f.rest ? `נמצא זמן ל־${f.slots.length} מתוך ${f.rest}` : 'מפוזר על השבוע. לחיצה על זמן מכניסה רק אותו'}:</p><div class="slots">${slots}</div>
+      <button class="primary" data-action="take-all">${icon('check')} להכניס ${f.slots.length === 1 ? 'אותו' : `את כל ה־${f.slots.length}`}</button>`
+      : '<p class="field-help">אין זמן פנוי השבוע באורך של פעם אחת.</p>'}
+    <button class="text-button muted" data-action="close-find">סגירה</button>
+  </section>`;
+  }
   return `<section class="find-panel" aria-label="מציאת זמן">
     <div class="find-head"><b>כמה זמן?</b><div class="duration-options">${[30, 45, 60, 90, 120].map(m => `<button data-action="find-length" data-minutes="${m}" class="${m === f.minutes ? 'active' : ''}">${duration(m)}</button>`).join('')}</div></div>
     ${slots ? `<p class="field-help">זמנים פנויים בשבוע הקרוב. לחיצה מכניסה ללו״ז:</p><div class="slots">${slots}</div>` : '<p class="field-help">אין זמן פנוי באורך הזה בשבוע הקרוב. אפשר לבחור זמן קצר יותר.</p>'}
@@ -299,34 +313,59 @@ function findPanel(ui, type, id) {
 // ── Personal goals ──
 export function goals(state) {
   const date = localDate();
-  const cards = state.goals.map(g => { const p = goalProgress(g, date); return `<a class="big-card is-goal${p.reached ? ' is-reached' : ''}" href="#goal/${esc(g.id)}">
-      <div class="big-card-top"><h3>${esc(g.title)}</h3><span class="chip">${g.type === 'sport' ? 'ספורט' : 'תחביב'}</span></div>
-      ${bar(p.percent, goalSummary(g, date))}<p>${esc(goalSummary(g, date))}${p.reached ? ' · הגעת ליעד!' : ''}</p></a>`; }).join('');
+  const cards = state.goals.map((g, i) => { const p = goalProgress(g, date), s = goalStats(g, date); return `<a class="big-card note goal-note${p.reached ? ' is-reached' : ''}" href="#goal/${esc(g.id)}" style="${tint(goalColor(i))}">
+      <span class="tape" aria-hidden="true"></span>
+      <div class="goal-note-body">${ring(p.percent, g.unit === 'minutes' ? Math.round(p.done / 6) / 10 : Math.round(p.done * 10) / 10, 'small')}
+        <div><h3>${esc(g.title)}</h3><p>${esc(goalSummary(g, date))}</p>
+        ${g.period === 'week' ? `<p class="goal-streak">${s.streak ? `${s.streak} ${s.streak === 1 ? 'שבוע' : 'שבועות'} ברצף ביעד` : g.type === 'sport' ? 'ספורט' : 'תחביב'}</p>` : ''}</div></div></a>`; }).join('');
   return `
   ${heading('מטרות אישיות', 'ספורט ותחביבים')}
-  ${section('המטרות שלי', 'לכל מטרה יעד פשוט, ורואים כמה כבר עשית.', `<button class="primary small" data-action="new-goal">${icon('plus')} מטרה חדשה</button>`)}
-  ${cards ? `<div class="card-grid">${cards}</div>` : `<div class="welcome"><div class="welcome-icon">${icon('target')}</div><h2>מה חשוב לך?</h2><p>למשל 3 אימונים בשבוע, 2 ריצות, 3 תרגולי גיטרה או 300 עמודים בספר.</p><button class="primary" data-action="new-goal">${icon('plus')} מטרה ראשונה</button></div>`}`;
+  ${section('המטרות שלי', '', `<button class="primary small" data-action="new-goal">${icon('target')} מטרה חדשה</button>`)}
+  ${cards ? `<div class="card-grid">${cards}</div>` : `<div class="welcome"><div class="welcome-icon">${icon('target')}</div><h2>מה חשוב לך?</h2><p>למשל 3 אימונים בשבוע, 2 ריצות, 3 תרגולי גיטרה או 300 עמודים בספר.</p><button class="primary" data-action="new-goal">מטרה ראשונה</button></div>`}`;
 }
 
 export function goalPage(state, id, ui) {
   const g = state.goals.find(x => x.id === id);
   if (!g) return `${back('goals', 'מטרות אישיות')}<div class="day-empty"><h3>המטרה לא נמצאה</h3></div>`;
-  const date = localDate(), p = goalProgress(g, date), unit = unitLabel(g);
-  const log = p.entries.map(l => `<div class="log-row"><span>${esc(fullDayLabel(l.date, date))}</span><b>${g.unit === 'minutes' ? duration(l.amount) : `${l.amount} ${esc(unit)}`}</b><button class="icon-button" data-action="delete-log" data-goal="${esc(g.id)}" data-id="${esc(l.id)}" aria-label="למחוק את הרישום">${icon('trash')}</button></div>`).join('');
+  const index = state.goals.indexOf(g), date = localDate(), p = goalProgress(g, date), unit = unitLabel(g), s = goalStats(g, date);
+  const amount = n => g.unit === 'minutes' ? duration(n) : `${Math.round(n * 10) / 10} ${unit}`;
+  const left = Math.max(0, g.target - p.done), weekly = g.period === 'week';
+  const log = p.entries.map(l => `<div class="log-row"><span>${esc(fullDayLabel(l.date, date))}</span><b>${esc(amount(l.amount))}</b><button class="icon-button" data-action="delete-log" data-goal="${esc(g.id)}" data-id="${esc(l.id)}" aria-label="למחוק את הרישום">${icon('trash')}</button></div>`).join('');
+  const top = Math.max(g.target, ...s.history.map(h => h.done), 1);
+  const short = d => { const x = new Date(`${d}T12:00:00`); return `${x.getDate()}.${x.getMonth() + 1}`; };
+  const chart = weekly ? `<div class="goal-chart" style="${tint(goalColor(index))}" role="img" aria-label="8 השבועות האחרונים">
+    <div class="goal-bars">${s.history.map((h, i) => `<i class="${h.done >= g.target ? 'is-hit' : ''}${i === 7 ? ' is-now' : ''}" style="height:${Math.round(h.done / top * 100)}%" title="${esc(amount(h.done))}"></i>`).join('')}
+      <span class="goal-target" style="bottom:${Math.round(g.target / top * 100)}%">יעד</span></div>
+    <div class="goal-labels">${s.history.map((h, i) => `<small>${i === 7 ? 'השבוע' : short(h.week)}</small>`).join('')}</div></div>` : '';
   return `
   ${back('goals', 'מטרות אישיות')}
-  ${heading(esc(g.title), `${g.type === 'sport' ? 'ספורט' : 'תחביב'} · יעד ${g.period === 'week' ? 'שבועי' : 'כולל'}`)}
-  <section class="hero">
-    <div class="hero-number"><b>${g.unit === 'minutes' ? Math.round(p.done / 6) / 10 : Math.round(p.done * 10) / 10}</b><span>מתוך ${g.unit === 'minutes' ? `${Math.round(g.target / 6) / 10} שעות` : `${g.target} ${esc(unit)}`}</span></div>
-    <div class="hero-body">${bar(p.percent, goalSummary(g, date))}<p>${esc(goalSummary(g, date))}</p>${p.reached ? '<p><b>הגעת ליעד. כל הכבוד!</b></p>' : ''}</div>
-    <div class="hero-actions">
-      <button class="primary" data-action="log-goal" data-id="${esc(g.id)}">${icon('plus')} ${g.unit === 'times' ? `עשיתי (+1)` : 'לרשום התקדמות'}</button>
-      <button class="text-button" data-action="find-time" data-type="goal" data-id="${esc(g.id)}">${icon('clock')} מצא לי זמן</button>
-      <button class="text-button" data-action="edit-goal" data-id="${esc(g.id)}">${icon('edit')} עריכה</button>
+  ${heading(esc(g.title), `${g.type === 'sport' ? 'ספורט' : 'תחביב'} · יעד ${weekly ? 'שבועי' : 'כולל'}`)}
+  <section class="goal-hero" style="${tint(goalColor(index))}">
+    ${ring(p.percent, g.unit === 'minutes' ? Math.round(p.done / 6) / 10 : Math.round(p.done * 10) / 10, 'big', `מתוך ${g.unit === 'minutes' ? `${Math.round(g.target / 6) / 10} שעות` : `${g.target} ${esc(unit)}`}`)}
+    <div class="goal-hero-side">
+      <p class="goal-headline">${p.reached ? 'הגעת ליעד. כל הכבוד!' : `עוד ${esc(amount(left))}${weekly ? ' השבוע' : ''}`}</p>
+      ${weekly ? `<div class="week-dots" aria-label="הימים השבוע">${s.days.map((d, i) => `<span class="${d.done ? 'is-done' : ''}${d.date === date ? ' is-today' : ''}" title="${esc(fullDayLabel(d.date, date))}">${d.done ? icon('check') : DAY_SHORT[i]}</span>`).join('')}</div>` : bar(p.percent, goalSummary(g, date))}
+      <div class="goal-actions">
+        <button class="primary" data-action="log-goal" data-id="${esc(g.id)}">${icon('check')} ${g.unit === 'times' ? 'עשיתי' : 'לרשום'}</button>
+        ${weekly && g.unit === 'times' && left > 0 ? `<button class="text-button" data-action="plan-rest" data-id="${esc(g.id)}">${icon('week')} לשבץ את מה שנשאר</button>` : `<button class="text-button" data-action="find-time" data-type="goal" data-id="${esc(g.id)}">${icon('clock')} מצא לי זמן</button>`}
+        <button class="text-button" data-action="edit-goal" data-id="${esc(g.id)}">${icon('edit')} עריכה</button>
+      </div>
     </div>
   </section>
   ${findPanel(ui, 'goal', g.id)}
-  <section>${section(g.period === 'week' ? 'השבוע' : 'כל הרישומים')}${log ? `<div class="log">${log}</div>` : '<p class="field-help">עוד אין רישומים. כשמסמנים "סיימתי" על פעילות של המטרה בלו״ז, היא נרשמת כאן לבד.</p>'}</section>`;
+  <div class="goal-stats" style="${tint(goalColor(index))}">
+    ${weekly ? `<div><b>${s.streak}</b><span>${s.streak === 1 ? 'שבוע ברצף ביעד' : 'שבועות ברצף ביעד'}</span></div><div><b>${esc(amount(s.best))}</b><span>השבוע הכי טוב</span></div>` : ''}
+    <div><b>${esc(amount(s.total))}</b><span>מאז ההתחלה</span></div>
+  </div>
+  ${chart ? `<section>${section('8 השבועות האחרונים')}${chart}</section>` : ''}
+  <section>${section(weekly ? 'הרישומים השבוע' : 'כל הרישומים')}${log ? `<div class="log">${log}</div>` : '<p class="field-help">כשמסמנים "סיימתי" על פעילות של המטרה בלו״ז, היא נרשמת כאן לבד.</p>'}</section>`;
+}
+
+const goalColor = i => PALETTE[(i + 4) % PALETTE.length];
+// A progress ring drawn like a pen circle around the number.
+function ring(percent, value, size, caption = '') {
+  const r = 42, c = 2 * Math.PI * r, p = Math.max(0, Math.min(100, percent));
+  return `<div class="ring ring-${size}"><svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="${r}" class="ring-track"/><circle cx="50" cy="50" r="${r}" class="ring-fill" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - p / 100)}"/></svg><span><b>${value}</b>${caption ? `<small>${caption}</small>` : ''}</span></div>`;
 }
 
 // ── Work ──
@@ -359,7 +398,7 @@ function jar(earned, expected, ongoing) {
 }
 
 function shiftRows(list, state, today, showJob = true) {
-  return list.map(s => `<button class="shift-row${s.past ? ' is-past' : ''}" data-action="edit-shift" data-id="${esc(s.id)}" aria-label="עריכת המשמרת">
+  return list.map(s => `<button class="shift-row${s.past ? ' is-past' : ''}" data-action="edit-shift" data-id="${esc(s.id)}" aria-label="עריכת המשמרת" style="${tint(jobColor(state, s.jobId))}">
     <span class="shift-when"><b>${esc(fullDayLabel(s.date, today))}</b><bdi dir="ltr">${shiftLabel(s)}</bdi></span>
     ${showJob ? `<span class="shift-what">${esc(state.jobs.find(j => j.id === s.jobId)?.name || '')}</span>` : '<span></span>'}
     <b class="shift-pay">${money(s.pay)}</b>
@@ -387,8 +426,10 @@ export function work(state, ui, now = new Date()) {
     </div>
   </section>
   <section>${section('העסקים שלי', '', `<button class="text-button" data-action="new-job">${icon('plus')} עסק</button>`)}
-    <div class="card-grid">${sum.jobs.map(j => `<a class="big-card is-job" href="#job/${esc(j.job.id)}">
-      <div class="big-card-top"><h3>${esc(j.job.name)}</h3><b class="big-number">${money(j.pay)}</b></div>
+    <div class="card-grid">${sum.jobs.map(j => `<a class="big-card note" href="#job/${esc(j.job.id)}" style="${tint(j.job.color)}">
+      <span class="tape" aria-hidden="true"></span>
+      <h3>${esc(j.job.name)}</h3>
+      <b class="note-amount">${money(j.pay)}</b>
       <p>${money(j.job.wage)} לשעה · ${j.shifts.length} משמרות</p></a>`).join('')}</div>
   </section>
   <section>${section('המשמרות', '', `<button class="text-button" data-action="new-shift">${icon('plus')} משמרת אחת</button>`)}
@@ -419,15 +460,67 @@ export function jobPage(state, id, ui, now = new Date()) {
 }
 
 // ── Calendar ──
+// One look per kind of thing, the same in the grid, the list and the legend.
+const TYPES = {class: ['שיעור', 'book'], shift: ['משמרת', 'work'], study: ['לימודים', 'book'], goal: ['מטרה', 'target'],
+  event: ['אירוע', 'week'], task: ['משימה', 'check'], other: ['אחר', 'sun']};
+const typeOf = e => e.type === 'item' ? e.kind : e.type;
+// A shift wears its workplace's color.
+const jobColor = (state, jobId) => state.jobs.find(j => j.id === jobId)?.color;
+const tint = color => color ? `--c:${color};--soft:${soft(color)};` : '';
+const tintOf = (state, e) => e.type === 'shift' ? tint(jobColor(state, e.jobId)) : '';
+const entryAction = e => e.type === 'shift' ? `data-action="edit-shift" data-id="${esc(e.id)}"`
+  : e.type === 'item' && !e.allDay ? `data-action="move-item" data-id="${esc(e.id)}"` : '';
+const entryLink = (e, inner, cls, style = '') => e.type === 'class' && e.courseId
+  ? `<a class="${cls}" href="#course/${esc(e.courseId)}"${style}>${inner}</a>`
+  : `<button type="button" class="${cls}" ${entryAction(e)}${style}${entryAction(e) ? '' : ' disabled'}>${inner}</button>`;
+
 export function calendar(state, ui, now = new Date()) {
-  const date = localDate(now), start = ui.week || weekStart(date);
-  const days = Array.from({length: 7}, (_, i) => addDays(start, i)).map(d => {
-    const {entries} = dayAgenda(state, d, {now});
-    return `<article class="cal-day${d === date ? ' is-today' : ''}"><h3>${esc(dayLabel(d, date))}<small>${esc(dateLabel(d))}</small></h3>
-      ${entries.length ? entries.map(e => `<div class="cal-entry is-${e.type === 'item' ? e.kind : e.type}${e.done ? ' is-done' : ''}"><bdi dir="ltr">${e.allDay ? 'כל היום' : `${e.start}–${e.end}`}</bdi><b>${e.type === 'shift' ? 'משמרת · ' : ''}${esc(e.title)}</b></div>`).join('') : '<p class="tt-free">פנוי</p>'}</article>`;
-  }).join('');
+  // On Saturday the week is over, so the calendar opens on the coming one.
+  const today = localDate(now), start = ui.week || addDays(weekStart(today), now.getDay() === 6 ? 7 : 0);
+  const days = Array.from({length: 7}, (_, i) => addDays(start, i)).map(date => ({date, entries: dayAgenda(state, date, {now}).entries}));
+  const used = [...new Set(days.flatMap(d => d.entries.map(typeOf)))].filter(t => t !== 'shift');
+  const jobsUsed = state.jobs.filter(j => days.some(d => d.entries.some(e => e.type === 'shift' && e.jobId === j.id)));
+  const legend = used.length || jobsUsed.length ? `<div class="cal-legend">${used.map(t => `<span class="t-${t}"><i></i>${TYPES[t][0]}</span>`).join('')}${jobsUsed.map(j => `<span style="${tint(j.color)}"><i></i>${esc(j.name)}</span>`).join('')}</div>` : '';
   return `
   ${heading('יומן', `${esc(dateLabel(start))} – ${esc(dateLabel(addDays(start, 6)))}`)}
   <div class="cal-nav"><button class="text-button" data-action="week" data-step="-7">${icon('back')} שבוע קודם</button><button class="text-button" data-action="week" data-step="0">השבוע</button><button class="text-button" data-action="week" data-step="7">שבוע הבא ${icon('arrow')}</button></div>
-  <div class="cal-week">${days}</div>`;
+  ${legend}
+  ${calendarGrid(state, days, today)}
+  ${calendarList(state, days, today)}`;
+}
+
+// Computers: the week as seven columns of cards in time order. Nothing is squeezed or cut;
+// free time shows between the cards, and things that overlap say so.
+function calendarGrid(state, days, today) {
+  const endOf = e => e.end === '24:00' ? 1440 : toMin(e.end);
+  const columns = days.map(({date, entries}) => {
+    const name = date === today ? 'היום' : DAY_NAMES[new Date(`${date}T12:00:00`).getDay()];
+    let last = null;
+    const cards = entries.map(e => {
+      const type = typeOf(e), a = e.allDay ? null : toMin(e.start), b = e.allDay ? null : endOf(e);
+      const gap = last !== null && a !== null && a - last >= 90 ? `<div class="board-free">פנוי ${duration(a - last)}</div>` : '';
+      const clash = last !== null && a !== null && a < last;
+      if (b !== null) last = Math.max(last ?? 0, b);
+      return gap + entryLink(e, `<span class="board-time">${e.allDay ? 'כל היום' : `<bdi>${e.start}</bdi> <small>עד <bdi>${e.end}</bdi></small>`}</span>
+        <b>${esc(e.title)}</b>
+        <span class="board-kind" title="${TYPES[type][0]}">${icon(TYPES[type][1])}${a !== null ? duration(b - a) : TYPES[type][0]}${clash ? `<em>${icon('alert')} חופף</em>` : ''}</span>`,
+        `board-card t-${type}${e.done ? ' is-done' : ''}`, tintOf(state, e) ? ` style="${tintOf(state, e)}"` : '');
+    }).join('');
+    return `<section class="board-day${date === today ? ' is-today' : ''}${entries.length ? '' : ' is-free'}">
+      <h3><span>${esc(name)}</span><b>${new Date(`${date}T12:00:00`).getDate()}</b></h3>
+      ${cards || '<p class="board-empty">יום פנוי</p>'}</section>`;
+  }).join('');
+  // Free days take less room, so busy days get space for their words.
+  const widths = days.map(d => d.entries.length ? 'minmax(0,1.6fr)' : 'minmax(0,.7fr)').join(' ');
+  return `<div class="cal-grid board" style="grid-template-columns:${widths}">${columns}</div>`;
+}
+// Phones: day by day, the hour large on the side and the kind of thing in color; free days fold into a short line.
+function calendarList(state, days, today) {
+  return `<div class="cal-list">${days.map(({date, entries}) => `
+    <section class="cal-day${date === today ? ' is-today' : ''}${entries.length ? '' : ' is-free'}">
+      <h3>${esc(dayLabel(date, today))} <small>${esc(dateLabel(date))}</small>${entries.length ? '' : '<em>פנוי</em>'}</h3>
+      ${entries.map(e => entryLink(e, `<span class="cal-time" dir="ltr">${e.allDay ? 'כל היום' : `<b>${e.start}</b><small>${e.end}</small>`}</span>
+        <span class="cal-what"><span class="cal-kind">${icon(TYPES[typeOf(e)][1])}${TYPES[typeOf(e)][0]}</span><b>${esc(e.title)}</b></span>`,
+        `cal-row t-${typeOf(e)}${e.done ? ' is-done' : ''}`, tintOf(state, e) ? ` style="${tintOf(state, e)}"` : '')).join('')}
+    </section>`).join('')}</div>`;
 }

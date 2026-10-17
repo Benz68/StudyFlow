@@ -1,12 +1,12 @@
 // The app: one state object saved in this browser, screens chosen by the address (#today, #course/ID…),
 // and every change made through mutate() so it is validated, saved and can be undone.
-import {uid, localDate, addDays, toMin, toClock, weekStart, validDate, dayLabel, dateLabel} from './util.mjs';
+import {uid, localDate, addDays, toMin, toClock, weekStart, validDate, dayLabel, dateLabel, PALETTE} from './util.mjs';
 import {loadState, saveState, validateState, migrateV1, demoState} from './store.mjs';
 import {shell, today, studies, coursePage, goals, goalPage, calendar, work, jobPage} from './screens.mjs';
 import {classForm, icsPreview, courseForm, topicsForm, goalForm, logForm, moveForm, settingsForm, helpContent, jobForm, shiftForm, weekShiftsForm} from './dialogs.mjs';
 import {parseTell} from './tell.mjs';
 import {propose, toItems, toShifts} from './propose.mjs';
-import {findTime, conflictsFor, classesOn, placeFlexible, alternatives, busyOn} from './schedule.mjs';
+import {findTime, planRest, conflictsFor, classesOn, placeFlexible, alternatives, busyOn} from './schedule.mjs';
 import {shiftSegments, repeatDates} from './work.mjs';
 import {parseICS, courseNameOf} from './ics.mjs';
 import {fileText, readSyllabus} from './syllabus.mjs';
@@ -60,6 +60,8 @@ function fillJar(key) {
 // While on the work screens, refresh every minute: a running shift's money grows, and an ended one drops in.
 setInterval(() => { if (['work', 'job'].includes(route().name) && !sheet.open && !document.hidden) render(); }, 60000);
 
+// A new workplace gets a color no other workplace uses yet.
+const nextJobColor = () => PALETTE.find(c => !state.jobs.some(j => j.color === c)) || PALETTE[state.jobs.length % PALETTE.length];
 // The work week is Sunday to Friday. On Saturday, the week to plan is the coming one.
 const thisWorkWeek = () => weekStart(localDate());
 const workWeek = () => new Date().getDay() === 6 ? addDays(thisWorkWeek(), 7) : thisWorkWeek();
@@ -97,9 +99,11 @@ function mutate(change, message) {
 }
 
 // ── Dialogs ──
+// Every form opens as a full page of its own, never a box over part of the screen.
 function open(html) {
   if (!sheet.open) returnFocus = document.activeElement;
-  sheet.innerHTML = html;
+  sheet.innerHTML = `<div class="sheet-page">${html}</div>`;
+  sheet.scrollTop = 0;
   if (!sheet.open) sheet.showModal();
   document.body.classList.add('dialog-open');
   (sheet.querySelector('[autofocus]') || sheet.querySelector('#dialog-title'))?.focus?.();
@@ -109,7 +113,6 @@ sheet.addEventListener('close', () => {
   document.body.classList.remove('dialog-open'); ui.pending = null;
   if (returnFocus?.isConnected) returnFocus.focus({preventScroll: true});
 });
-sheet.addEventListener('click', e => { if (e.target === sheet) close(); });
 const formError = (form, message) => { const el = form.querySelector('[data-error]'); if (el) el.textContent = message; };
 
 // ── "Tell me" ──
@@ -211,8 +214,11 @@ function addFoundSlot(slot) {
   const f = ui.find, course = f.type === 'course' && state.courses.find(c => c.id === f.id), goal = f.type === 'goal' && state.goals.find(g => g.id === f.id);
   mutate(() => state.items.push({id: uid(), date: slot.date, start: slot.start, end: slot.end, done: false, fixed: false,
     ...(course ? {title: `ללמוד ${course.name}`, kind: 'study', courseId: course.id} : {title: goal.title, kind: 'goal', goalId: goal.id})}), `נכנס ללו״ז: ${dayLabel(slot.date)}, ${slot.start}.`);
-  ui.find.slots = findTime(state, f.minutes); render();
+  ui.find = f.rest ? restFind(goal) : {...f, slots: findTime(state, f.minutes)}; render();
 }
+const restFind = goal => ({type: 'goal', id: goal.id, minutes: goal.sessionMinutes, ...planRest(state, goal)});
+
+
 
 // ── Clicks ──
 document.addEventListener('click', event => {
@@ -249,7 +255,7 @@ document.addEventListener('click', event => {
       a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); toast('הגיבוי מוכן.');
     },
     'confirm-import': () => { const next = ui.pending?.import; close(); if (next) mutate(() => { state = next; }, 'הגיבוי נטען.'); },
-    'week': () => { const step = Number(t.dataset.step); ui.week = step ? addDays(ui.week || weekStart(localDate()), step) : ''; render(); },
+    'week': () => { const step = Number(t.dataset.step); ui.week = step ? addDays(ui.week || addDays(weekStart(localDate()), new Date().getDay() === 6 ? 7 : 0), step) : ''; render(); },
     // Studies
     'new-class': () => open(classForm(state, {}, t.dataset.course || '')),
     'edit-class': () => open(classForm(state, state.classes.find(c => c.id === id) || {})),
@@ -270,10 +276,17 @@ document.addEventListener('click', event => {
       main.querySelector('.find-panel')?.scrollIntoView({block: 'nearest', behavior: 'smooth'});
     },
     'find-length': () => { ui.find.minutes = Number(t.dataset.minutes); ui.find.slots = findTime(state, ui.find.minutes); render(); },
+    'plan-rest': () => { ui.find = restFind(state.goals.find(g => g.id === id)); render(); main.querySelector('.find-panel')?.scrollIntoView({block: 'nearest', behavior: 'smooth'}); },
+    'take-all': () => {
+      const f = ui.find, goal = state.goals.find(g => g.id === f.id), slots = f.slots;
+      mutate(() => { for (const s of slots) state.items.push({id: uid(), title: goal.title, kind: 'goal', goalId: goal.id, date: s.date, start: s.start, end: s.end, done: false, fixed: false}); },
+        `${slots.length === 1 ? 'פעם אחת נכנסה' : `${slots.length} פעמים נכנסו`} ללו״ז.`);
+      ui.find = null; render();
+    },
     'take-slot': () => addFoundSlot(ui.find.slots[Number(t.dataset.n)]),
     'close-find': () => { ui.find = null; render(); },
     // Work
-    'new-job': () => open(jobForm()),
+    'new-job': () => open(jobForm({}, nextJobColor())),
     'edit-job': () => open(jobForm(state.jobs.find(j => j.id === id))),
     'delete-job': () => { close(); mutate(() => { state.jobs = state.jobs.filter(j => j.id !== id); state.shifts = state.shifts.filter(s => s.jobId !== id); }, 'מקום העבודה נמחק.'); location.hash = 'work'; },
     'new-shift': () => state.jobs.length ? open(shiftForm(state, {}, t.dataset.job || '')) : (open(jobForm()), toast('קודם מוסיפים את העסק ואת השכר לשעה.')),
@@ -445,7 +458,7 @@ document.addEventListener('submit', event => {
       if (!name) throw Error('צריך שם למקום העבודה.');
       if (!Number.isFinite(wage) || wage < 0) throw Error('השכר לשעה צריך להיות מספר.');
       close();
-      const job = {name, wage, overtime: fd.has('overtime')}, existing = state.jobs.find(j => j.id === form.dataset.id), newId = uid();
+      const job = {name, wage, overtime: fd.has('overtime'), color: get('color') || nextJobColor()}, existing = state.jobs.find(j => j.id === form.dataset.id), newId = uid();
       mutate(() => { if (existing) Object.assign(state.jobs.find(j => j.id === existing.id), job); else state.jobs.push({id: newId, ...job}); }, existing ? 'נשמר.' : '');
       // A new business goes straight on to this week's shifts.
       if (!existing) { ui.weekTimes = null; open(weekShiftsForm(state, newId, workWeek(), lastTimes(newId), thisWorkWeek())); }

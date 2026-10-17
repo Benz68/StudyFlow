@@ -1,6 +1,6 @@
 // Everything is saved in this browser only. Saved data is validated on every load, older versions are
 // migrated, and nothing is thrown away silently: unreadable data and the pre-migration copy are kept aside.
-import {validDate, toMin, localDate, addDays, uid} from './util.mjs';
+import {validDate, toMin, localDate, addDays, uid, colorFor} from './util.mjs';
 
 export const VERSION = 2;
 export const STORAGE_KEY = 'studyflow.v2';
@@ -61,8 +61,9 @@ export function validateState(value) {
     kind: pick(i.kind, ['study', 'task', 'goal', 'event', 'other'], 'other'), fixed: i.fixed === true, done: i.done === true,
     ...(courseIds.has(i.courseId) ? {courseId: i.courseId} : {}), ...(goalIds.has(i.goalId) ? {goalId: i.goalId} : {}),
   })));
-  state.jobs = unique(list(value.jobs, 30).filter(j => j && text(j.id) && text(j.name)).map(j => ({
-    id: text(j.id), name: text(j.name, 60), wage: Math.round(number(j.wage, 0, 0, 2000) * 100) / 100, overtime: j.overtime !== false})));
+  // Each workplace keeps its own color; older saves get one by their place in the list.
+  state.jobs = unique(list(value.jobs, 30).filter(j => j && text(j.id) && text(j.name))).map((j, i) => ({
+    id: text(j.id), name: text(j.name, 60), wage: Math.round(number(j.wage, 0, 0, 2000) * 100) / 100, overtime: j.overtime !== false, color: colorFor(j, i)}));
   const jobIds = new Set(state.jobs.map(j => j.id));
   // A shift may end after midnight (end earlier than start), but never last zero minutes.
   state.shifts = unique(list(value.shifts, 3000).filter(s => s && text(s.id) && jobIds.has(s.jobId) && validDate(s.date)

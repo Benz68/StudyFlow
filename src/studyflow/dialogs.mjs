@@ -1,5 +1,5 @@
 // Small forms that open over the screen. Bigger areas (a course, a goal) are full pages instead.
-import {esc, icon, duration, DAY_SHORT, DAY_NAMES, fullDayLabel, localDate, timeSelect, addDays, dayLabel, dateLabel} from './util.mjs';
+import {esc, icon, duration, DAY_SHORT, DAY_NAMES, fullDayLabel, localDate, timeSelect, addDays, dayLabel, dateLabel, PALETTE} from './util.mjs';
 import {sheetTop} from './screens.mjs';
 import {UNITS} from './progress.mjs';
 
@@ -98,12 +98,14 @@ export function moveForm(item, options) {
   </form>`;
 }
 
-export function jobForm(j = {}) {
+export function jobForm(j = {}, color = PALETTE[0]) {
+  const chosen = j.color || color;
   return `${sheetTop(j.id ? 'עריכת העסק' : 'איפה אתה עובד?', 'עבודה')}
   <form data-form="job" data-id="${esc(j.id || '')}">
     <label for="job-name">שם העסק</label><input id="job-name" name="name" maxlength="60" required autofocus value="${esc(j.name || '')}" placeholder="למשל, קפה רחביה">
     <label for="job-wage">כמה אתה מקבל לשעה?</label>
     <div class="money-input"><input id="job-wage" name="wage" type="number" inputmode="decimal" min="0" max="2000" step="0.01" required value="${j.wage ?? ''}" placeholder="38"><span>₪</span></div>
+    <fieldset><legend>הצבע שלו ביומן</legend><div class="color-picks">${PALETTE.map(c => `<label style="--c:${c}"><input type="radio" name="color" value="${c}" ${c === chosen ? 'checked' : ''} aria-label="צבע"><span></span></label>`).join('')}</div></fieldset>
     <details class="advanced"><summary>עוד פרטים</summary>
       <label class="repeat-option"><input type="checkbox" name="overtime" ${j.overtime !== false ? 'checked' : ''}> לחשב שעות נוספות במשמרת ארוכה</label>
     </details>

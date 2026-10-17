@@ -59,7 +59,12 @@ export function timeSelect(attrs, value, {from = 0, to = 24 * 60 - 15} = {}) {
   return `<select ${attrs}>${times.map(t => `<option value="${t}" ${t === value ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
 }
 
-export const DAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+// Colors for things the person names (a workplace, a course, a goal): ink-like, readable on paper.
+export const PALETTE = ['#5b4ea8', '#2a8a7e', '#c4612a', '#b03a6b', '#3a6da3', '#7a8a22', '#9a6b2e', '#6b4f8f'];
+export const soft = color => `${color}24`;
+export const colorFor = (item, index) => PALETTE.includes(item?.color) ? item.color : PALETTE[index % PALETTE.length];
+
+export const DAY_NAMES =['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
 export const DAY_SHORT = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
 export const dateLabel = date => noon(date).toLocaleDateString('he-IL', {day: 'numeric', month: 'long'});
 export const dayLabel = (date, today = localDate()) => date === today ? 'היום' : date === addDays(today, 1) ? 'מחר' : `יום ${DAY_NAMES[weekday(date)]}`;

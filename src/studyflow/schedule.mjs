@@ -1,6 +1,7 @@
 // Places only what the person asked for, inside their free time, and never overlaps anything.
 // The timetable and already planned items are obstacles; a short break is kept around each of them.
-import {toMin, toClock, weekday, localDate, addDays} from './util.mjs';
+import {toMin, toClock, weekday, localDate, addDays, weekStart} from './util.mjs';
+import {goalProgress} from './progress.mjs';
 import {shiftSegments} from './work.mjs';
 
 const jobName = (state, id) => state.jobs.find(j => j.id === id)?.name || 'משמרת';
@@ -98,6 +99,20 @@ export function findTime(state, minutes, {from = localDate(), days = 7, perDay =
   return slots;
 }
 
+// What is left of a weekly goal this week: one session a day, on days with nothing of it yet, spread out.
+export function planRest(state, goal, {today = localDate(), now = new Date()} = {}) {
+  const end = addDays(weekStart(today), 6), p = goalProgress(goal, today);
+  const planned = state.items.filter(i => i.goalId === goal.id && !i.done && i.date >= today && i.date <= end);
+  const rest = Math.max(0, Math.ceil(goal.target - p.done) - planned.length);
+  const taken = new Set([...planned.map(i => i.date), ...p.entries.map(l => l.date)]);
+  const open = [];
+  for (let date = today; date <= end; date = addDays(date, 1)) {
+    const slot = !taken.has(date) && placeFlexible(state, date, goal.sessionMinutes, {now});
+    if (slot) open.push({date, start: slot.start, end: slot.end});
+  }
+  const slots = rest >= open.length ? open : Array.from({length: rest}, (_, i) => open[Math.round(i * (open.length - 1) / Math.max(1, rest - 1))]);
+  return {slots: rest ? slots : [], rest, planned: planned.length};
+}
 export function plannedMinutes(state, date) {
   return busyOn(state, date).reduce((n, b) => n + Math.max(0, Math.min(b.end, 1440) - Math.max(b.start, 0)), 0);
 }
