@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createState, validateState} from '../src/studyflow/store.mjs';
-import {shiftPay, shiftSegments, monthSummary, repeatDates} from '../src/studyflow/work.mjs';
+import {shiftPay, payLines, money2, shiftSegments, monthSummary, repeatDates} from '../src/studyflow/work.mjs';
 import {busyOn, freeRanges, dayAgenda} from '../src/studyflow/schedule.mjs';
 import {parseTell} from '../src/studyflow/tell.mjs';
 import {propose, toShifts, toItems} from '../src/studyflow/propose.mjs';
@@ -73,4 +73,18 @@ test('a shift on top of a class is a conflict; a free one is saved as a shift', 
 test('shifts for a deleted workplace are dropped; zero-length shifts are invalid', () => {
   const s = validateState({jobs: [cafe], shifts: [{id: 'a', jobId: 'gone', date: '2026-10-18', start: '10:00', end: '12:00'}, {id: 'b', jobId: 'cafe', date: '2026-10-18', start: '10:00', end: '10:00'}]});
   assert.equal(s.shifts.length, 0);
+});
+
+test('the pay card adds up line by line to the same pay', () => {
+  const job = {id: 'j', wage: 38, overtime: true}, shift = {jobId: 'j', date: '2026-10-29', start: '17:00', end: '02:00', tips: 120};
+  const {lines, total} = payLines(shift, job);
+  assert.deepEqual(lines.map(l => l.amount), [304, 47.5, 120]);
+  assert.equal(lines[1].label, 'שעה נוספת, 125%');
+  assert.equal(total, 471.5);
+  assert.equal(Math.round(total), shiftPay(shift, job).pay);
+  assert.equal(money2(47.5), '47.50 ₪');
+  assert.equal(money2(304), '304 ₪');
+  const withBreak = payLines({...shift, breakMinutes: 30, tips: 0}, job);
+  assert.equal(withBreak.lines.at(-1).amount, null, 'an unpaid break is a note, not money');
+  assert.equal(withBreak.total, 38 * 8 + 38 * 0.5 * 1.25);
 });

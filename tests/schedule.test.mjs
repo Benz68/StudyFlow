@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createState, validateState} from '../src/studyflow/store.mjs';
-import {freeRanges, placeFlexible, conflictsFor, alternatives, findTime, classesOn, planRest} from '../src/studyflow/schedule.mjs';
+import {freeRanges, placeFlexible, conflictsFor, alternatives, findTime, classesOn, planRest, shiftClashes} from '../src/studyflow/schedule.mjs';
 import {goalStats} from '../src/studyflow/progress.mjs';
 import {propose, ready, toItems} from '../src/studyflow/propose.mjs';
 import {toMin} from '../src/studyflow/util.mjs';
@@ -101,4 +101,13 @@ test('goal stats count weeks on target in a row', () => {
   assert.equal(s.total, 5);
   assert.equal(s.history.length, 8);
   assert.deepEqual(s.days.filter(d => d.done).map(d => d.date), ['2026-10-18']);
+});
+test('a shift gives way to lectures, other shifts and fixed events, and personal study gives way to it', () => {
+  const s = base();
+  s.items.push({id: 'study', title: 'ללמוד סטטיסטיקה', date: '2026-10-18', start: '13:00', end: '15:00', kind: 'study'});
+  const at = (date, start, end) => shiftClashes(s, {jobId: 'j', date, start, end}).map(b => b.title);
+  assert.deepEqual(at('2026-10-18', '09:00', '11:00'), ['סטטיסטיקה'], 'a lecture blocks');
+  assert.deepEqual(at('2026-10-18', '12:30', '16:00'), [], 'personal study does not');
+  assert.deepEqual(at('2026-10-18', '18:00', '22:00'), ['ארוחה'], 'a fixed event does');
+  assert.deepEqual(at('2026-10-19', '23:00', '11:00'), ['סטטיסטיקה'], 'past midnight onto the next day\'s lecture');
 });
