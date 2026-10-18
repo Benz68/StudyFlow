@@ -1,4 +1,4 @@
-const CACHE = 'studyflow-v15';
+const CACHE = 'studyflow-v16';
 // Paths are relative to where the app is hosted (/ locally, /StudyFlow/ on GitHub Pages).
 const BASE = new URL('./', self.location).pathname;
 const SHELL = ['', 'index.html', 'manifest.json', 'src/studyflow/brand/mark.svg', 'src/studyflow/brand/app-icon-180.png', 'src/studyflow/brand/app-icon-192.png', 'src/studyflow/brand/app-icon-512.png',
