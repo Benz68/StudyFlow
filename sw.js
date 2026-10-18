@@ -1,9 +1,9 @@
-const CACHE = 'studyflow-v14';
+const CACHE = 'studyflow-v15';
 // Paths are relative to where the app is hosted (/ locally, /StudyFlow/ on GitHub Pages).
 const BASE = new URL('./', self.location).pathname;
 const SHELL = ['', 'index.html', 'manifest.json', 'src/studyflow/brand/mark.svg', 'src/studyflow/brand/app-icon-180.png', 'src/studyflow/brand/app-icon-192.png', 'src/studyflow/brand/app-icon-512.png',
   'src/studyflow/bootstrap.mjs', 'src/studyflow/app.mjs', 'src/studyflow/util.mjs', 'src/studyflow/store.mjs', 'src/studyflow/schedule.mjs', 'src/studyflow/propose.mjs',
-  'src/studyflow/tell.mjs', 'src/studyflow/ics.mjs', 'src/studyflow/syllabus.mjs', 'src/studyflow/progress.mjs', 'src/studyflow/work.mjs','src/studyflow/screens.mjs', 'src/studyflow/dialogs.mjs',
+  'src/studyflow/tell.mjs', 'src/studyflow/ics.mjs', 'src/studyflow/syllabus.mjs', 'src/studyflow/progress.mjs', 'src/studyflow/work.mjs','src/studyflow/screens.mjs', 'src/studyflow/dialogs.mjs', 'src/studyflow/timetable.mjs',
   'src/studyflow/styles.css', 'src/studyflow/depth.css', 'src/studyflow/app.css'].map(path => BASE + path);
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));

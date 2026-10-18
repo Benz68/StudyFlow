@@ -1,8 +1,9 @@
+import {semesterFields, updateSemester} from './timetable.mjs';
 // The app: one state object saved in this browser, screens chosen by the address (#today, #course/ID…),
 // and every change made through mutate() so it is validated, saved and can be undone.
-import {uid, localDate, addDays, toMin, toClock, weekStart, validDate, dayLabel, dateLabel, PALETTE} from './util.mjs';
+import {esc, uid, localDate, addDays, toMin, toClock, weekStart, validDate, dayLabel, dateLabel, PALETTE} from './util.mjs';
 import {loadState, saveState, validateState, migrateV1, demoState} from './store.mjs';
-import {shell, today, studies, coursePage, goals, goalPage, calendar, work, jobPage} from './screens.mjs';
+import {shell, sheetTop, today, studies, coursePage, goals, goalPage, calendar, work, jobPage} from './screens.mjs';
 import {classForm, icsPreview, courseForm, topicsForm, goalForm, logForm, moveForm, settingsForm, helpContent, jobForm, shiftForm, weekShiftsForm} from './dialogs.mjs';
 import {parseTell} from './tell.mjs';
 import {propose, toItems, toShifts} from './propose.mjs';
@@ -257,12 +258,14 @@ document.addEventListener('click', event => {
     'confirm-import': () => { const next = ui.pending?.import; close(); if (next) mutate(() => { state = next; }, 'הגיבוי נטען.'); },
     'week': () => { const step = Number(t.dataset.step); ui.week = step ? addDays(ui.week || addDays(weekStart(localDate()), new Date().getDay() === 6 ? 7 : 0), step) : ''; render(); },
     // Studies
+    'semester-dates': () => open(sheetTop('תקופת הלימודים') + semesterFields(state.classes, ui.week || weekStart(localDate()))),
     'new-class': () => open(classForm(state, {}, t.dataset.course || '')),
     'edit-class': () => open(classForm(state, state.classes.find(c => c.id === id) || {})),
     'delete-class': () => { close(); mutate(() => { state.classes = state.classes.filter(c => c.id !== id); }, 'השיעור נמחק.'); },
     'new-course': () => open(courseForm()),
     'edit-course': () => open(courseForm(state.courses.find(c => c.id === id))),
-    'delete-course': () => { close(); mutate(() => { state.courses = state.courses.filter(c => c.id !== id); }, 'הקורס נמחק.'); location.hash = 'studies'; },
+    'delete-course': () => { const c = state.courses.find(c => c.id === id); if (!c) return; open(`${sheetTop('להסיר את הקורס מההתקדמות?')}<p>הנושאים, המועדים ודיווחי הלמידה של הקורס יוסרו. השיעורים במערכת השעות והפריטים ביומן יישארו. אפשר לבטל מיד אחרי ההסרה.</p><button class="primary submit-button" data-action="confirm-delete-course" data-id="${esc(id)}">להסיר מההתקדמות</button><button class="text-button" data-action="close">ביטול</button>`); },
+    'confirm-delete-course': () => { close(); mutate(() => { state.courses = state.courses.filter(c => c.id !== id); }, 'הקורס הוסר מההתקדמות. השיעורים נשמרו ביומן.'); location.hash = 'studies'; },
     'add-topics': () => open(topicsForm(state.courses.find(c => c.id === id))),
     'cycle-topic': () => mutate(() => { const topic = state.courses.find(c => c.id === t.dataset.course)?.topics.find(x => x.id === id); if (topic) topic.status = {new: 'learning', learning: 'done', done: 'new'}[topic.status]; }),
     'delete-topic': () => mutate(() => { const c = state.courses.find(x => x.id === t.dataset.course); c.topics = c.topics.filter(x => x.id !== id); }, 'הנושא נמחק.'),
@@ -373,16 +376,24 @@ document.addEventListener('submit', event => {
   event.preventDefault();
   const fd = new FormData(form), get = k => String(fd.get(k) ?? '').trim();
   try {
+    if (kind === 'semester') {
+      const classes = updateSemester(state.classes, get('from'), get('until'));
+      close(); ui.week = weekStart(get('from'));
+      mutate(() => { state.classes = classes; }, 'תקופת הלימודים עודכנה. אפשר לבטל את השינוי.');
+      location.hash = 'calendar';
+    }
     if (kind === 'class') {
       const title = get('title'), days = fd.getAll('days').map(Number), start = get('start'), end = get('end');
       if (!title) throw Error('צריך שם לקורס.');
       if (!days.length) throw Error('בוחרים לפחות יום אחד.');
+      if (get('from') && !validDate(get('from')) || get('until') && !validDate(get('until'))) throw Error('צריך תאריכי לימודים תקינים.');
+      if (get('from') && get('until') && get('from') > get('until')) throw Error('תאריך הסיום צריך להיות אחרי תאריך ההתחלה.');
       if (toMin(start) === null || toMin(end) === null || toMin(end) <= toMin(start)) throw Error('שעת הסיום צריכה להיות אחרי שעת ההתחלה.');
       close();
       mutate(() => {
         let course = findCourse(title);
         if (!course) { course = {id: uid(), name: title, topics: [], deadlines: [], studyLog: []}; state.courses.push(course); }
-        const c = {id: form.dataset.id || uid(), title: course.name, courseId: course.id, days, start, end, location: get('location'), skipDates: state.classes.find(x => x.id === form.dataset.id)?.skipDates || [], ...(validDate(get('until')) ? {until: get('until')} : {})};
+        const c = {id: form.dataset.id || uid(), title: course.name, courseId: course.id, days, start, end, location: get('location'), skipDates: state.classes.find(x => x.id === form.dataset.id)?.skipDates || [], ...(validDate(get('from')) ? {from: get('from')} : {}), ...(validDate(get('until')) ? {until: get('until')} : {})};
         state.classes = form.dataset.id ? state.classes.map(x => x.id === c.id ? c : x) : [...state.classes, c];
       }, 'נשמר במערכת השעות.');
     }

@@ -1,3 +1,4 @@
+import {timetableNotice} from './timetable.mjs';
 // Screen templates. Every piece of text the person typed goes through esc().
 import {esc, icon, duration, localDate, addDays, weekStart, dateLabel, dayLabel, fullDayLabel, greeting, DAY_NAMES, DAY_SHORT, toMin, toClock, timeSelect, soft, PALETTE} from './util.mjs';
 import {dayAgenda, plannedMinutes} from './schedule.mjs';
@@ -217,7 +218,7 @@ export function studies(state) {
   return `
   ${heading('לימודים')}
   <section>
-    ${section('מערכת השעות', '', state.classes.length ? `${importButton}<button class="primary small" data-action="new-class">${icon('plus')} שיעור</button>` : '')}
+    ${section('מערכת השעות', '', state.classes.length ? `<button class="text-button" data-action="semester-dates">תקופת הלימודים</button>${importButton}<button class="primary small" data-action="new-class">${icon('plus')} שיעור</button>` : '')}
     ${state.classes.length ? `<div class="timetable">${table}</div>`
       : `<div class="empty-actions"><button class="primary" data-action="new-class">${icon('plus')} להוסיף שיעור</button>${importButton}</div>`}
   </section>
@@ -229,13 +230,14 @@ export function studies(state) {
 
 function courseCard(c, index, date = localDate()) {
   const p = courseProgress(c, date);
-  return `<a class="big-card note" href="#course/${esc(c.id)}" style="${tint(PALETTE[(index + 2) % PALETTE.length])}">
+  return `<article class="big-card note" style="${tint(PALETTE[(index + 2) % PALETTE.length])}">
     <span class="tape" aria-hidden="true"></span>
-    <div class="big-card-top"><h3>${esc(c.name)}</h3><b class="big-number">${p.total ? `${p.percent}%` : '—'}</b></div>
+    <div class="big-card-top"><h3><a href="#course/${esc(c.id)}">${esc(c.name)}</a></h3><b class="big-number">${p.total ? `${p.percent}%` : '—'}</b></div>
     ${bar(p.percent, `${p.percent}% התקדמות`)}
     <p>${p.total ? `${p.done} מתוך ${p.total} נושאים הושלמו` : 'עוד אין נושאים'}${p.next ? ` · הבא בתור: ${esc(p.next.title)}` : ''}</p>
     <div class="chips">${p.exam !== null ? `<span class="chip ${p.exam <= 14 ? 'urgent' : ''}">מבחן ${countdown(p.exam)}</span>` : ''}${p.nextDeadline ? `<span class="chip">${esc(p.nextDeadline.title)} · ${esc(dateLabel(p.nextDeadline.date))}</span>` : ''}</div>
-  </a>`;
+    <div class="section-actions"><a class="text-button" href="#course/${esc(c.id)}">נושאים והתקדמות</a><button class="text-button muted" data-action="delete-course" data-id="${esc(c.id)}" aria-label="הסרת ${esc(c.name)} מרשימת ההתקדמות">${icon('trash')} להסיר מההתקדמות</button></div>
+  </article>`;
 }
 
 export function coursePage(state, id, ui) {
@@ -485,6 +487,8 @@ export function calendar(state, ui, now = new Date()) {
   ${heading('יומן', `${esc(dateLabel(start))} – ${esc(dateLabel(addDays(start, 6)))}`)}
   <div class="cal-nav"><button class="text-button" data-action="week" data-step="-7">${icon('back')} שבוע קודם</button><button class="text-button" data-action="week" data-step="0">השבוע</button><button class="text-button" data-action="week" data-step="7">שבוע הבא ${icon('arrow')}</button></div>
   ${legend}
+  <p class="field-help">השיעורים ממערכת השעות מופיעים כאן אוטומטית, לפי ימי הלימוד ותאריכי הסמסטר. <a href="#studies">עריכת מערכת השעות</a></p>
+  ${timetableNotice(state.classes, start)}
   ${calendarGrid(state, days, today)}
   ${calendarList(state, days, today)}`;
 }

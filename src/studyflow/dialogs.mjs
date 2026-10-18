@@ -20,8 +20,10 @@ export function classForm(state, c = {}, courseId = '') {
     <div class="form-row"><div><label for="class-start">משעה</label>${timeSelect('id="class-start" name="start"', c.start || '10:00', {from: 360})}</div>
     <div><label for="class-end">עד שעה</label>${timeSelect('id="class-end" name="end"', c.end || '12:00', {from: 360})}</div></div>
     <label for="class-location">איפה? (לא חובה)</label><input id="class-location" name="location" maxlength="80" value="${esc(c.location || '')}" placeholder="בניין, חדר או זום">
-    <details class="advanced"${c.until ? ' open' : ''}><summary>עד מתי הסמסטר?</summary>
+    <details class="advanced"${c.until || c.from ? ' open' : ''}><summary>מתי השיעור מופיע ביומן?</summary>
+      <label for="class-from">תאריך תחילת הלימודים (לא חובה)</label><input id="class-from" name="from" type="date" value="${c.from || ''}">
       <label for="class-until">השיעור מפסיק אחרי (לא חובה)</label><input id="class-until" name="until" type="date" value="${c.until || ''}"></details>
+    <small class="field-help">השיעור יופיע ביומן בכל יום שסימנת, בתוך תקופת הלימודים. בלי תאריכים הוא יחזור בכל שבוע.</small>
     ${submit(c.id ? 'לשמור' : 'להוסיף למערכת')}
   </form>
   ${c.id ? `<button class="text-button muted" data-action="delete-class" data-id="${esc(c.id)}">${icon('trash')} למחוק את השיעור</button>` : ''}`;
