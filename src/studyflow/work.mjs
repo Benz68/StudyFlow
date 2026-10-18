@@ -20,6 +20,25 @@ export function shiftPay(shift, job) {
   return {hours: paid, pay: Math.round(base + (shift.tips || 0))};
 }
 
+// "How much did it come to?": the same pay as shiftPay, line by line, before rounding.
+export function payLines(shift, job) {
+  const paid = Math.max(0, shiftMinutes(shift) - (shift.breakMinutes || 0)) / 60, wage = job?.wage || 0;
+  const hours = n => n === 1 ? 'שעה' : n === 2 ? 'שעתיים' : `${Math.round(n * 100) / 100} שעות`;
+  const lines = [];
+  if (job?.overtime === false) lines.push({label: `${hours(paid)} × ${wage} ₪`, amount: paid * wage});
+  else {
+    const regular = Math.min(paid, 8), first = Math.min(Math.max(paid - 8, 0), 2), more = Math.max(paid - 10, 0);
+    lines.push({label: `${hours(regular)} × ${wage} ₪`, amount: regular * wage});
+    if (first) lines.push({label: `${first === 1 ? 'שעה נוספת' : `${hours(first)} נוספות`}, 125%`, amount: first * wage * 1.25});
+    if (more) lines.push({label: `${more === 1 ? 'שעה נוספת' : `${hours(more)} נוספות`}, 150%`, amount: more * wage * 1.5});
+  }
+  if (shift.breakMinutes) lines.push({label: `הפסקה של ${shift.breakMinutes} דק׳, לא בתשלום`, amount: null});
+  if (shift.tips) lines.push({label: 'טיפים / בונוס', amount: shift.tips});
+  return {lines, hours: paid, total: lines.reduce((n, l) => n + (l.amount || 0), 0)};
+}
+// Shekels with agorot only when there are any: "304 ₪", "47.50 ₪".
+export const money2 = n => { const a = Math.round(n * 100); return `${(a / 100).toLocaleString('he-IL', {minimumFractionDigits: a % 100 ? 2 : 0, maximumFractionDigits: 2})} ₪`; };
+
 // A month ("2026-10") of work: per workplace and in total, split into done so far and still ahead.
 export function monthSummary(state, month, now = new Date()) {
   const today = localDate(now), nowMin = now.getHours() * 60 + now.getMinutes();

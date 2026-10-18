@@ -9,7 +9,9 @@ export function propose(state, drafts, now = new Date()) {
   // New items also block each other, but only on their own day.
   const extraOn = date => placed.filter(b => b.date === date);
   const segmentsOf = p => p.kind === 'shift' ? shiftSegments(p) : [{date: p.date, start: toMin(p.start), end: toMin(p.end)}];
-  const hitsFor = p => segmentsOf(p).flatMap(seg => [...busyOn(state, seg.date), ...extraOn(seg.date)].filter(x => seg.start < x.end && seg.end > x.start));
+  // Work comes before personal study, goals and tasks already planned; lectures and fixed events still block it.
+  const yields = (p, x) => p.kind === 'shift' && x.source === 'item' && x.kind !== 'event';
+  const hitsFor = p => segmentsOf(p).flatMap(seg => [...busyOn(state, seg.date), ...extraOn(seg.date)].filter(x => !yields(p, x) && seg.start < x.end && seg.end > x.start));
   const block = p => segmentsOf(p).forEach(seg => placed.push({...seg, title: p.title, source: 'new'}));
   const out = drafts.map(d => ({...d}));
   // Fixed times first: they cannot move, so flexible items are fitted around them.

@@ -28,8 +28,8 @@ export function busyOn(state, date, {ignoreId = ''} = {}) {
   }
   for (const item of state.items) {
     if (item.date !== date || item.id === ignoreId) continue;
-    blocks.push(item.allDay ? {start: Math.min(0, dayStart), end: Math.max(1440, dayEnd), title: item.title, source: 'item', id: item.id}
-      : {start: toMin(item.start), end: toMin(item.end), title: item.title, source: 'item', id: item.id});
+    blocks.push(item.allDay ? {start: Math.min(0, dayStart), end: Math.max(1440, dayEnd), title: item.title, source: 'item', kind: item.kind, id: item.id}
+      : {start: toMin(item.start), end: toMin(item.end), title: item.title, source: 'item', kind: item.kind, id: item.id});
   }
   return blocks.sort((a, b) => a.start - b.start);
 }
@@ -97,6 +97,13 @@ export function findTime(state, minutes, {from = localDate(), days = 7, perDay =
     for (const r of ranges.slice(0, perDay)) slots.push({date, start: toClock(r.start), end: toClock(r.start + minutes)});
   }
   return slots;
+}
+
+// What a shift can't go on top of: lectures in the timetable, another shift, a fixed event.
+// Personal study, goals and tasks give way to work.
+export function shiftClashes(state, shift, {ignoreId = ''} = {}) {
+  return shiftSegments(shift).flatMap(seg => busyOn(state, seg.date, {ignoreId})
+    .filter(b => (b.source !== 'item' || b.kind === 'event') && seg.start < b.end && seg.end > b.start));
 }
 
 // What is left of a weekly goal this week: one session a day, on days with nothing of it yet, spread out.

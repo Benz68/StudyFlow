@@ -1,5 +1,6 @@
 // Small forms that open over the screen. Bigger areas (a course, a goal) are full pages instead.
-import {esc, icon, duration, DAY_SHORT, DAY_NAMES, fullDayLabel, localDate, timeSelect, addDays, dayLabel, dateLabel, PALETTE} from './util.mjs';
+import {esc, icon, duration, DAY_SHORT, DAY_NAMES, fullDayLabel, localDate, timeSelect, addDays, dayLabel, dateLabel, PALETTE, soft, validDate} from './util.mjs';
+import {payLines, money2, money, monthSummary} from './work.mjs';
 import {sheetTop} from './screens.mjs';
 import {UNITS} from './progress.mjs';
 
@@ -136,10 +137,27 @@ export function weekShiftsForm(state, jobId, sunday, times = {start: '16:00', en
   </form>`;
 }
 
+// "How much did it come to?": one shift's pay line by line, and what the month comes to with it.
+export function payCard(state, shift) {
+  const job = state.jobs.find(j => j.id === shift.jobId);
+  if (!job || !validDate(shift.date) || !shift.start || shift.start === shift.end) return '';
+  const {lines, total} = payLines(shift, job), month = shift.date.slice(0, 7);
+  const withIt = {...state, shifts: [...state.shifts.filter(x => x.id !== shift.id), {...shift, id: shift.id || 'preview'}]};
+  const mine = monthSummary(withIt, month).jobs.find(j => j.job.id === job.id);
+  const when = month === localDate().slice(0, 7) ? 'החודש' : `ב${new Date(`${shift.date}T12:00:00`).toLocaleDateString('he-IL', {month: 'long'})}`;
+  return `<section class="pay-card" style="--c:${job.color};--soft:${soft(job.color)}" aria-label="כמה יצא">
+    <h3 class="pay-title">כמה יצא?</h3>
+    <div class="pay-shift"><b>יום ${DAY_NAMES[new Date(`${shift.date}T12:00:00`).getDay()]} · ${esc(job.name)}</b><bdi dir="ltr">${shift.start}–${shift.end}</bdi></div>
+    <div class="pay-lines">${lines.map(l => `<div class="pay-line${l.amount === null ? ' is-note' : ''}"><span>${esc(l.label)}</span><b>${l.amount === null ? '' : money2(l.amount)}</b></div>`).join('')}</div>
+    <div class="pay-total"><span>סה״כ למשמרת</span><b>${money2(total)}</b></div>
+    <div class="pay-month"><small>צפוי ${when} · ${mine.shifts.length === 1 ? 'משמרת אחת' : `${mine.shifts.length} משמרות`}</small><b>${money(mine.pay)}</b></div>
+  </section>`;
+}
 export function shiftForm(state, s = {}, jobId = '') {
   const job = s.jobId || jobId || state.jobs[0]?.id;
   return `${sheetTop(s.id ? 'עריכת משמרת' : 'משמרת חדשה', 'עבודה')}
   <form data-form="shift" data-id="${esc(s.id || '')}">
+    <div data-pay>${payCard(state, {id: s.id, jobId: job, date: s.date || localDate(), start: s.start || '16:00', end: s.end || '22:00', breakMinutes: s.breakMinutes || 0, tips: s.tips || 0})}</div>
     <label for="shift-job">מקום העבודה</label>
     <select id="shift-job" name="jobId">${state.jobs.map(j => `<option value="${esc(j.id)}" ${j.id === job ? 'selected' : ''}>${esc(j.name)} · ₪${j.wage} לשעה</option>`).join('')}</select>
     <label for="shift-date">יום</label><input id="shift-date" name="date" type="date" required value="${s.date || localDate()}">

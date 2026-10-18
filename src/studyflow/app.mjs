@@ -4,11 +4,11 @@ import {semesterFields, updateSemester} from './timetable.mjs';
 import {esc, uid, localDate, addDays, toMin, toClock, weekStart, validDate, dayLabel, dateLabel, PALETTE} from './util.mjs';
 import {loadState, saveState, validateState, migrateV1, demoState} from './store.mjs';
 import {shell, sheetTop, today, studies, coursePage, goals, goalPage, calendar, work, jobPage} from './screens.mjs';
-import {classForm, icsPreview, courseForm, topicsForm, goalForm, logForm, moveForm, settingsForm, helpContent, jobForm, shiftForm, weekShiftsForm} from './dialogs.mjs';
+import {classForm, icsPreview, courseForm, topicsForm, goalForm, logForm, moveForm, settingsForm, helpContent, jobForm, shiftForm, weekShiftsForm, payCard} from './dialogs.mjs';
 import {parseTell} from './tell.mjs';
 import {propose, toItems, toShifts} from './propose.mjs';
-import {findTime, planRest, conflictsFor, classesOn, placeFlexible, alternatives, busyOn} from './schedule.mjs';
-import {shiftSegments, repeatDates} from './work.mjs';
+import {findTime, planRest, shiftClashes, conflictsFor, classesOn, placeFlexible, alternatives} from './schedule.mjs';
+import {repeatDates} from './work.mjs';
 import {parseICS, courseNameOf} from './ics.mjs';
 import {fileText, readSyllabus} from './syllabus.mjs';
 import {amountForSession} from './progress.mjs';
@@ -320,6 +320,7 @@ document.addEventListener('input', event => {
   if (el.id === 'tell-text') ui.tellText = el.value;
   if (el.dataset.p !== undefined && el.dataset.field === 'title') editDraft(Number(el.dataset.p), 'title', el.value);
   if (el.form?.dataset.form === 'topics' && el.name === 'text') previewSyllabus(el.form);
+  if (el.form?.dataset.form === 'shift') refreshPay(el.form);
 });
 document.addEventListener('change', async event => {
   const el = event.target;
@@ -362,8 +363,15 @@ document.addEventListener('change', async event => {
       const box = row.querySelector('[name=day]'); if (!box.checked) { box.checked = true; row.classList.add('is-on'); }
     }
   }
+  if (el.form?.dataset.form === 'shift') refreshPay(el.form);
   if (el.form?.dataset.form === 'goal' && el.name === 'unit') el.form.querySelector('[data-unit-help]').textContent = el.value === 'minutes' ? 'בשעות' : '';
 });
+// The pay card at the top of the shift form follows every change to hours, break and tips.
+function refreshPay(form) {
+  const f = form.elements;
+  form.querySelector('[data-pay]').innerHTML = payCard(state, {id: form.dataset.id || '', jobId: f.jobId.value, date: f.date.value,
+    start: f.start.value, end: f.end.value, breakMinutes: Number(f.breakMinutes.value) || 0, tips: Number(f.tips.value) || 0});
+}
 function previewSyllabus(form) {
   const {topics, deadlines} = readSyllabus(form.elements.text.value, {today: localDate()});
   form.querySelector('[data-syllabus-preview]').textContent = topics.length || deadlines.length ? `זיהיתי ${topics.length} נושאים${deadlines.length ? ` ו־${deadlines.length} מבחנים או הגשות` : ''}.` : '';
@@ -479,7 +487,7 @@ document.addEventListener('submit', event => {
       if (!days.length) throw Error('מסמנים לפחות יום אחד.');
       const planned = days.map(date => ({jobId, date, start: get(`start-${date}`), end: get(`end-${date}`), breakMinutes: 0, tips: 0}));
       if (planned.some(s => s.start === s.end)) throw Error('בכל משמרת, שעת הסיום צריכה להיות שונה מההתחלה.');
-      const clash = s => shiftSegments(s).some(seg => busyOn(state, seg.date).some(b => seg.start < b.end && seg.end > b.start));
+      const clash = s => shiftClashes(state, s).length > 0;
       const free = planned.filter(s => !clash(s)), busy = planned.filter(clash);
       if (!free.length) throw Error('כל המשמרות שסימנת מתנגשות עם משהו אחר ביומן. אפשר לשנות שעות.');
       close();
@@ -494,8 +502,8 @@ document.addEventListener('submit', event => {
       if (start === end) throw Error('שעת הסיום צריכה להיות שונה משעת ההתחלה.');
       const base = {jobId, start, end, breakMinutes: Number(get('breakMinutes')) || 0, tips: Number(get('tips')) || 0};
       // Never on top of a class or anything else; for a weekly repeat, busy dates are skipped and reported.
-      const collide = date => [...new Set(shiftSegments({...base, date}).flatMap(seg =>
-        busyOn(state, seg.date, {ignoreId: editing}).filter(b => seg.start < b.end && seg.end > b.start).map(b => b.title)))];
+      const collide = date => [...new Set(shiftClashes(state, {...base, date}, {ignoreId: editing}).map(b => b.title))];
+
       const dates = editing ? [date] : repeatDates(date, Number(get('weeks')) || 1);
       const free = dates.filter(d => !collide(d).length), busy = dates.filter(d => collide(d).length);
       if (!free.length) throw Error(`בזמן הזה יש כבר: ${collide(dates[0]).join(', ')}. אפשר לבחור שעות אחרות.`);
