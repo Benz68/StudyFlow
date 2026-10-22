@@ -76,6 +76,18 @@ function tellBox(ui) {
   </section>`;
 }
 
+const ASKS = ['day', 'when', 'time'];
+export const openQuestions = p => (p.needs || []).filter(n => ASKS.includes(n));
+function askBox(p, i, todayDate) {
+  const asks = openQuestions(p); if (!asks.length) return '';
+  const chip = (need, value, label) => `<button class="ask-chip" data-action="answer" data-p="${i}" data-need="${need}" data-value="${value}">${label}</button>`;
+  const rows = asks.map(n => n === 'day'
+    ? `<div class="ask-row"><b>באיזה יום?</b><span>לא נאמר יום.</span><div class="ask-chips">${chip('day', todayDate, 'היום')}${chip('day', addDays(todayDate, 1), 'מחר')}${chip('day', addDays(todayDate, 2), 'מחרתיים')}<small>או יום אחר ברשימה למעלה</small></div></div>`
+    : n === 'when'
+    ? `<div class="ask-row"><b>מתי לעשות את זה?</b><span>לא נאמרה שעה.</span><div class="ask-chips">${chip('when', 'flex', 'תמצא לי זמן')}${chip('when', 'morning', 'בבוקר')}${chip('when', 'noon', 'בצהריים')}${chip('when', 'evening', 'בערב')}${chip('when', 'fixed', 'בשעה מסוימת')}</div></div>`
+    : `<div class="ask-row"><b>השעה <bdi dir="ltr">${p.start}–${p.end}</bdi> נכונה?</b><span>השעה לא נאמרה, אז ניחשתי.</span><div class="ask-chips">${chip('time', 'ok', 'כן, נכון')}<small>או לשנות את השעות למעלה</small></div></div>`).join('');
+  return `<div class="proposal-ask">${rows}</div>`;
+}
 function reviewCard(proposals, todayDate, state) {
   const dates = Array.from({length: 14}, (_, i) => addDays(todayDate, i));
   const rows = proposals.map((p, i) => {
@@ -84,7 +96,7 @@ function reviewCard(proposals, todayDate, state) {
     const minutes = [15, 30, 45, 60, 90, 120, 150, 180, 240];
     const minuteOptions = [...new Set([...minutes, p.minutes])].sort((a, b) => a - b).map(m => `<option value="${m}" ${m === p.minutes ? 'selected' : ''}>${duration(m)}</option>`).join('');
     return `
-    <article class="proposal is-${p.status}">
+    <article class="proposal is-${p.status}${openQuestions(p).length ? ' has-questions' : ''}">
       <div class="proposal-top">
         <input class="proposal-title" data-p="${i}" data-field="title" value="${esc(p.title)}" maxlength="120" aria-label="שם הפריט">
         <span class="proposal-kind">${KIND[p.kind] || ''}</span>
@@ -102,9 +114,10 @@ function reviewCard(proposals, todayDate, state) {
         ${mode === 'flex' ? `<select data-p="${i}" data-field="minutes" aria-label="כמה זמן">${minuteOptions}</select>` : ''}
       </div>
       ${proposalStatus(p, i, todayDate)}
+      ${askBox(p, i, todayDate)}
     </article>`;
   }).join('');
-  const blocked = proposals.some(p => p.status !== 'ok');
+  const blocked = proposals.some(p => p.status !== 'ok' || openQuestions(p).length);
   return `
   <section class="review-card" aria-labelledby="review-title">
     <div class="review-head"><h2 id="review-title">זה מה שהבנתי</h2><p>אפשר לתקן כל דבר. שום דבר לא נכנס ללו״ז לפני האישור.</p></div>
@@ -114,7 +127,7 @@ function reviewCard(proposals, todayDate, state) {
       <button class="text-button" data-action="edit-tell">לשנות את מה שכתבתי</button>
       <button class="text-button muted" data-action="cancel-tell">ביטול</button>
     </div>
-    ${blocked && proposals.length ? '<p class="field-help review-blocked">כדי להמשיך, בוחרים שעה חלופית לכל פריט שמסומן.</p>' : ''}
+    ${blocked && proposals.length ? `<p class="field-help review-blocked">${proposals.some(p => openQuestions(p).length) ? 'כדי להמשיך, עונים על השאלות המסומנות: באיזה יום ומתי.' : 'כדי להמשיך, בוחרים שעה חלופית לכל פריט שמסומן.'}</p>` : ''}
   </section>`;
 }
 
@@ -126,7 +139,7 @@ function proposalStatus(p, i, todayDate) {
   if (p.status === 'noroom') return `<div class="proposal-status warn">${icon('alert')} <span>אין זמן פנוי מתאים ${p.deadline ? 'עד המועד' : 'ביום הזה'}.${options ? ' אפשר:' : ''}</span><div class="slots">${options}</div></div>`;
   if (p.allDay) return `<p class="proposal-status ok">${icon('check')} כל היום, ${esc(fullDayLabel(p.date, todayDate))}${p.hides?.length ? `. השיעורים ביום הזה (${p.hides.map(esc).join(', ')}) יוסתרו` : ''}${p.overlaps?.length ? `. כבר מתוכנן באותו יום: ${p.overlaps.map(esc).join(', ')}` : ''}</p>`;
   const notes = [p.outsidePart ? 'לא היה מקום בחלק היום שביקשת' : '', p.kind === 'shift' && toMin(p.end) <= toMin(p.start) ? 'נגמרת למחרת' : '',
-    p.needs?.includes('job') ? 'בדוק שזה מקום העבודה הנכון' : '', p.needs?.includes('time') ? 'קבעתי שעה משוערת, כדאי לבדוק' : '', p.needs?.includes('minutes') ? 'לא נאמר כמה זמן, שמתי ' + duration(p.minutes) : ''].filter(Boolean);
+    p.needs?.includes('job') ? 'בדוק שזה מקום העבודה הנכון' : '', p.needs?.includes('minutes') ? 'לא נאמר כמה זמן, שמתי ' + duration(p.minutes) : ''].filter(Boolean);
   return `<p class="proposal-status ok">${icon('check')} ${esc(fullDayLabel(p.date, todayDate))} · <bdi dir="ltr">${p.start}–${p.end}</bdi>${notes.length ? `<small> · ${notes.join(' · ')}</small>` : ''}</p>`;
 }
 

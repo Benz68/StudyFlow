@@ -410,3 +410,15 @@ dialog#sheet::backdrop{background:var(--bg)}
 .pay-month{display:grid;gap:2px;padding:14px 18px;border-radius:16px;background:var(--c);color:#fff}
 .pay-month small{font-size:13px;opacity:.88}
 .pay-month b{font-size:32px;line-height:1.1;text-align:right}
+/* Review card questions: a missing day or time is asked, never guessed silently */
+.proposal.has-questions{border-color:#e8c6b8}
+.proposal-ask{display:grid;gap:12px;margin-top:10px;background:#fdf3ee;border:1px solid #f0d6ca;border-radius:16px;padding:12px 14px}
+.ask-row b{display:block;font-size:15px;color:var(--ink)}
+.ask-row>span{display:block;font-size:13px;color:var(--muted);margin-top:2px}
+.ask-chips{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}
+.ask-chip{border:1.5px solid #e3b3a3;background:#fff;color:#a8452f;border-radius:999px;padding:8px 16px;min-height:44px;font-size:15px;font-weight:600}
+.ask-chip:active{transform:scale(.97)}
+@media(hover:hover){.ask-chip:hover{background:#f9e3da}}
+.ask-chips small{font-size:12px;color:var(--muted)}
+.review-blocked{color:#a8452f}
+@media(max-width:650px){.ask-chips{gap:6px}.ask-chip{padding:8px 13px;font-size:14px}}

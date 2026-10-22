@@ -208,12 +208,17 @@ function dayMonth(today, day, month, year) {
 // Main entry: a day said once ("מחר ...") carries to the following parts until another day is said.
 export function parseTell(sentence, context = {courses: [], goals: []}, now = new Date()) {
   const today = localDate(now);
-  let carried = today;
+  let carried = today, daySaid = false;
   const items = [];
   for (const raw of splitParts(sentence)) {
     const p = parsePart(raw, context, now);
-    if (p.date) carried = p.date;
-    const base = {title: p.title.slice(0, 120), kind: p.kind, fixed: p.fixed, needs: p.needs,
+    if (p.date) { carried = p.date; daySaid = true; }
+    // Nothing is assumed silently: no day said (here or earlier in the sentence) → ask which day;
+    // nothing said about when → ask whether to find a time, a part of the day, or a set hour.
+    const needs = [...p.needs];
+    if (!daySaid && !p.dates && !p.deadline) needs.push('day');
+    if (!p.fixed && !p.allDay && !p.part && !p.deadline && !needs.includes('time')) needs.push('when');
+    const base = {title: p.title.slice(0, 120), kind: p.kind, fixed: p.fixed, needs,
       ...(p.courseId ? {courseId: p.courseId} : {}), ...(p.goalId ? {goalId: p.goalId} : {}), ...(p.jobId ? {jobId: p.jobId} : {}), ...(p.part ? {part: p.part} : {})};
     if (p.allDay) for (const date of p.dates || [p.date || carried]) items.push({...base, date, allDay: true});
     else items.push({...base, date: p.date || (p.deadline && !p.fixed ? today : carried), minutes: p.minutes,

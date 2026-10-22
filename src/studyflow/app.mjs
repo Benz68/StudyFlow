@@ -3,7 +3,7 @@ import {semesterFields, updateSemester} from './timetable.mjs';
 // and every change made through mutate() so it is validated, saved and can be undone.
 import {esc, uid, localDate, addDays, toMin, toClock, weekStart, validDate, dayLabel, dateLabel, PALETTE} from './util.mjs';
 import {loadState, saveState, validateState, migrateV1, demoState} from './store.mjs';
-import {shell, sheetTop, today, studies, coursePage, goals, goalPage, calendar, work, jobPage} from './screens.mjs';
+import {shell, sheetTop, today, studies, coursePage, goals, goalPage, calendar, work, jobPage, openQuestions} from './screens.mjs';
 import {classForm, icsPreview, courseForm, topicsForm, goalForm, logForm, moveForm, settingsForm, helpContent, jobForm, shiftForm, weekShiftsForm, payCard} from './dialogs.mjs';
 import {parseTell} from './tell.mjs';
 import {propose, toItems, toShifts} from './propose.mjs';
@@ -125,6 +125,15 @@ function runTell() {
   if (!drafts.length) { ui.tellError = 'לא הצלחתי להבין. אפשר לנסות לכתוב כל דבר בנפרד, עם פסיקים.'; return render(); }
   ui.drafts = drafts; refreshProposals();
 }
+// Answers to the review card's questions (which day, when, is the guessed hour right).
+function answer(i, need, value) {
+  const d = ui.drafts[i]; if (!d) return;
+  if (need === 'day') return editDraft(i, 'date', value);
+  if (need === 'when' && value === 'fixed') return editDraft(i, 'mode', 'fixed');
+  if (need === 'when' && value !== 'flex') return editDraft(i, 'part', value);
+  d.needs = (d.needs || []).filter(n => n !== need);
+  refreshProposals();
+}
 function refreshProposals() { ui.proposals = propose(state, ui.drafts); render(); }
 function editDraft(i, field, value) {
   const d = ui.drafts[i]; if (!d) return;
@@ -146,13 +155,15 @@ function editDraft(i, field, value) {
   }
   // Only a shift may end after midnight; anything else needs an end after its start.
   if (field === 'end' && toMin(value) !== null && (d.kind === 'shift' ? value !== d.start : toMin(value) > toMin(d.start))) d.end = value;
+  if (field === 'part') { d.part = value; d.fixed = false; d.allDay = false; delete d.start; delete d.end; d.minutes ||= 60; }
   if (field === 'jobId') { d.jobId = value; d.title = `משמרת ב${state.jobs.find(j => j.id === value)?.name || ''}`; }
-  d.needs = (d.needs || []).filter(n => !(n === 'time' && (field === 'start' || field === 'mode')) && !(n === 'minutes' && field === 'minutes'));
+  d.needs = (d.needs || []).filter(n => !(n === 'time' && (field === 'start' || field === 'mode')) && !(n === 'minutes' && field === 'minutes')
+    && !(n === 'day' && field === 'date') && !(n === 'when' && ['mode', 'start', 'part'].includes(field)));
   refreshProposals();
 }
 function commitTell() {
   const items = toItems(ui.proposals, uid), shifts = toShifts(ui.proposals, uid);
-  if ((!items.length && !shifts.length) || ui.proposals.some(p => p.status !== 'ok')) return;
+  if ((!items.length && !shifts.length) || ui.proposals.some(p => p.status !== 'ok' || openQuestions(p).length)) return;
   const all = [...items, ...shifts];
   mutate(() => {
     state.items.push(...items);
@@ -236,6 +247,7 @@ document.addEventListener('click', event => {
     'dismiss-notice': () => { notice = ''; render(); },
     'focus-tell': () => { if (route().name !== 'today') location.hash = 'today'; ui.proposals = null; render(); setTimeout(() => main.querySelector('#tell-text')?.focus(), 30); },
     'tell': runTell,
+    'answer': () => answer(Number(t.dataset.p), t.dataset.need, t.dataset.value),
     'mic': toggleMic,
     'edit-tell': () => { ui.proposals = null; render(); main.querySelector('#tell-text')?.focus(); },
     'cancel-tell': () => { ui.tellText = ''; ui.drafts = null; ui.proposals = null; render(); },

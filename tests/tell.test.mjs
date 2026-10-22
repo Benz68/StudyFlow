@@ -74,3 +74,12 @@ test('missing length is flagged instead of silently guessed', () => {
   assert.ok(gift.needs.includes('minutes'));
   assert.deepEqual(parseTell('', ctx, now), []);
 });
+
+test('a missing day or time becomes a question instead of a silent guess', () => {
+  const needs = text => parseTell(text, ctx, now).map(i => (i.needs || []).filter(n => ['day', 'when', 'time'].includes(n)).sort());
+  assert.deepEqual(needs('לקנות מתנה'), [['day', 'when']], 'nothing said: ask which day and when');
+  assert.deepEqual(needs('מחר בערב לצאת לרוץ'), [[]], 'day and part of the day said: nothing to ask');
+  assert.deepEqual(needs('לסיים עבודה עד יום חמישי'), [[]], 'a deadline says enough: find time until then');
+  assert.deepEqual(needs('מחר בשעה 5 פגישה עם המנחה'), [[]], 'day and hour said');
+  assert.deepEqual(needs('מחר ללמוד שעתיים, לקנות חלב'), [['when'], ['when']], 'the day carries to the next part');
+});
