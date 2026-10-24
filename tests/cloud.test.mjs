@@ -20,6 +20,7 @@ test('which copy wins: the device, the account, or ask', () => {
   assert.equal(decide({editedAt: synced - 1000, syncedAt: synced - 5000}, remote), 'pull-keep-other');
   assert.equal(isEmpty({classes: [], items: [], courses: [], goals: [], jobs: [], shifts: []}), true);
   assert.equal(isEmpty({classes: [{}]}), false);
+  assert.equal(isEmpty({classes: [], profile: {onboarded: true}}), false, 'someone who finished the first-time questions has something to keep, even with no classes yet');
 });
 
 test('sign in with a code, keep the session, renew it when it runs out', async () => {
