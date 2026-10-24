@@ -205,7 +205,7 @@ export function accountSheet(user, {codeFor = '', sync = {}} = {}) {
       <button class="text-button" data-action="sign-out">להתנתק</button>
       <button class="text-button muted" data-action="delete-account">${icon('trash')} מחיקת החשבון</button>
     </div>
-    <p class="field-help">בהתנתקות המידע נשאר גם במכשיר הזה וגם בחשבון.</p>`;
+    <p class="field-help">בהתנתקות המידע נשאר בחשבון ונמחק מהמכשיר הזה. מתחברים שוב, והכול חוזר. <a href="privacy.html" target="_blank" rel="noopener">מדיניות הפרטיות</a></p>`;
   }
   if (codeFor) {
     return `${sheetTop('בדוק את המייל')}
@@ -230,7 +230,8 @@ export function accountSheet(user, {codeFor = '', sync = {}} = {}) {
 
 export function deleteAccountSheet() {
   return `${sheetTop('למחוק את החשבון?')}
-  <p>החשבון והעותק שבענן יימחקו לצמיתות, ואי אפשר לשחזר אותם. מה שיש במכשיר הזה יישאר בו.</p>
+  <p>החשבון וכל המידע שלך יימחקו לצמיתות, גם מהמכשיר הזה, ואי אפשר לשחזר אותם. אם רוצים לשמור עותק, מורידים אותו קודם.</p>
+  <button class="text-button" data-action="export">${icon('file')} הורדת המידע שלי</button>
   <button class="primary submit-button danger" data-action="confirm-delete-account">למחוק לצמיתות</button>
   <button class="text-button" data-action="account">ביטול</button>`;
 }

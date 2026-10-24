@@ -3,4 +3,4 @@
 export const SUPABASE_URL = 'https://cfmxsgalkbelfwzisjcs.supabase.co';
 export const SUPABASE_KEY = 'sb_publishable_J7yRvja79P8cZClPeLnBBA_3nP3ZnDy';
 // "Continue with Google" shows once Google is switched on in Supabase (Authentication → Sign In / Providers).
-export const GOOGLE_SIGN_IN = false;
+export const GOOGLE_SIGN_IN = true;

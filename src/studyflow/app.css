@@ -494,3 +494,59 @@ html{-webkit-text-size-adjust:100%;overscroll-behavior-y:none}
 .or-line::before,.or-line::after{content:'';flex:1;border-top:1px solid var(--line)}
 .submit-button.danger{background:var(--teal)}
 .sidebar-account .icon,.account-button .icon{width:22px;height:22px}
+/* ── The way in: sign-in, then the first-time questions, one full screen at a time ── */
+#gate{position:fixed;inset:0;z-index:20;overflow-y:auto;overscroll-behavior:contain;background:var(--bg) radial-gradient(#0000000a 1px,transparent 1px) 0 0/22px 22px;
+  padding:calc(28px + env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left))}
+body.gated{overflow:hidden}
+.gate-page{max-width:440px;min-height:100%;margin:0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;animation:gate-in .35s var(--ease)}
+.gate-page.gate-wide{max-width:560px;justify-content:flex-start}
+.gate-page h1{font-family:'Amatic SC',Heebo,sans-serif;font-size:46px;line-height:1.05;text-wrap:balance}
+.gate-mark{border-radius:22px;box-shadow:0 14px 30px -18px #00000080}
+.gate-lead{font-size:16px;line-height:1.7;color:var(--muted);text-wrap:pretty;max-width:36ch}
+.gate-lead b{color:var(--ink)}
+.gate-form{width:100%;display:flex;flex-direction:column;align-items:stretch;gap:10px;text-align:start}
+.gate-form input{font-size:18px!important}
+.gate-button{width:100%;min-height:54px;font-size:17px;justify-content:center;border-radius:16px}
+.secondary.gate-button{background:var(--card);color:var(--ink);box-shadow:0 0 0 1.5px var(--line)}
+.google-button.gate-button{display:flex}
+.google-g{width:22px;height:22px}
+.gate-fine{font-size:13px;color:var(--muted);max-width:34ch}
+.gate-links{display:flex;gap:18px;justify-content:center}
+.gate-skip{color:var(--muted)}
+.gate-steps{display:flex;gap:6px}
+.gate-steps i{width:26px;height:5px;border-radius:4px;background:var(--line)}
+.gate-steps i.on{background:var(--teal)}
+.gate-spinner{width:34px;height:34px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--teal);animation:spin 0.9s linear infinite}
+.gate-page .or-line{width:100%}
+.visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.area-picks{display:grid;gap:10px}
+.area-pick{position:relative;cursor:pointer}
+.area-pick input{position:absolute;opacity:0;inset:0;margin:0}
+.area-pick span{display:grid;grid-template-columns:40px 1fr;grid-template-rows:auto auto;column-gap:12px;align-items:center;padding:14px 16px;border-radius:16px;background:var(--card);box-shadow:0 0 0 1.5px var(--line);text-align:start;transition:box-shadow .15s,background .15s}
+.area-pick .icon{grid-row:span 2;width:30px;height:30px;color:var(--muted)}
+.area-pick b{font-size:17px}.area-pick small{font-size:13px;color:var(--muted)}
+.area-pick input:checked+span{box-shadow:0 0 0 2.5px var(--teal);background:color-mix(in srgb,var(--teal) 8%,var(--card))}
+.area-pick input:checked+span .icon{color:var(--teal)}
+.area-pick input:focus-visible+span{outline:3px solid #dc9a57;outline-offset:2px}
+.ob-card{width:100%;display:flex;flex-direction:column;gap:10px;padding:16px;border-radius:18px;background:var(--card);box-shadow:0 0 0 1px var(--line);text-align:start}
+.ob-card h2{display:flex;align-items:center;gap:8px;font-size:18px}
+.ob-card h2 .icon{width:22px;height:22px;color:var(--teal)}
+.ob-card p{font-size:14px;color:var(--muted);line-height:1.6}
+.ob-actions{display:flex;flex-wrap:wrap;gap:6px 18px}
+.ob-inline{display:grid;grid-template-columns:1fr 110px auto;gap:8px;align-items:end}
+.ob-presets{display:flex;flex-wrap:wrap;gap:8px}
+.ob-preset{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;border-radius:22px;box-shadow:inset 0 0 0 1.5px var(--line);background:var(--card);font-size:14px}
+.ob-preset.is-on{box-shadow:none;background:#2f6b43;color:#fff}
+.ob-preset .icon{width:16px;height:16px}
+.ob-done{display:flex;align-items:center;gap:6px;color:#2f6b43!important;font-weight:600}
+.ob-done .icon{width:18px;height:18px}
+@media(max-width:420px){.ob-inline{grid-template-columns:1fr 92px}.ob-inline .text-button{grid-column:1/-1;justify-self:start}}
+/* The first try of "tell me", and one tip the first time each area opens */
+.coach-card,.tip-card{position:relative;display:flex;flex-wrap:wrap;align-items:flex-start;gap:6px 10px;margin:0 0 14px;padding:14px 16px;border-radius:16px;background:color-mix(in srgb,#f2c14e 22%,var(--card));box-shadow:0 0 0 1.5px color-mix(in srgb,#f2c14e 55%,transparent)}
+.coach-card b{display:flex;align-items:center;gap:6px;width:100%;font-size:15px}
+.coach-card p,.tip-card p{flex:1 1 220px;font-size:14.5px;line-height:1.6}
+.tip-card>.icon,.coach-card b .icon{width:20px;height:20px;flex:none;color:#a77c12}
+.coach-card::after{content:'';position:absolute;bottom:-9px;inset-inline-start:34px;width:16px;height:16px;background:inherit;transform:rotate(45deg);box-shadow:1.5px 1.5px 0 0 color-mix(in srgb,#f2c14e 55%,transparent)}
+@keyframes gate-in{from{opacity:0;transform:translateY(10px)}}
+@keyframes spin{to{transform:rotate(1turn)}}
+@media(prefers-reduced-motion:reduce){.gate-page{animation:none}.gate-spinner{animation-duration:3s}}

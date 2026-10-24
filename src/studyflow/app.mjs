@@ -2,7 +2,8 @@ import {semesterFields, updateSemester} from './timetable.mjs';
 // The app: one state object saved in this browser, screens chosen by the address (#today, #course/ID…),
 // and every change made through mutate() so it is validated, saved and can be undone.
 import {esc, uid, localDate, addDays, toMin, toClock, weekStart, validDate, dayLabel, dateLabel, PALETTE, icon} from './util.mjs';
-import {loadState, saveState, validateState, migrateV1, demoState} from './store.mjs';
+import {loadState, saveState, validateState, migrateV1, demoState, createState} from './store.mjs';
+import {signInScreen, waitScreen, onboardingScreen, GOAL_PRESETS, tipCard, coachCard} from './onboarding.mjs';
 import {shell, sheetTop, today, studies, coursePage, goals, goalPage, calendar, work, jobPage, openQuestions} from './screens.mjs';
 import {classForm, icsPreview, courseForm, topicsForm, goalForm, logForm, moveForm, settingsForm, helpContent, jobForm, shiftForm, weekShiftsForm, payCard, accountSheet, deleteAccountSheet, chooseCopySheet} from './dialogs.mjs';
 import {createCloud, decide, isEmpty} from './cloud.mjs';
@@ -21,20 +22,52 @@ let saved = null, undoState = null, toastTimer = null, recognition = null, retur
 const ui = {tellText: '', drafts: null, proposals: null, find: null, week: '', demo: false, micAvailable: !!Recognition, listening: false, pending: null};
 
 document.querySelector('#app').innerHTML = shell();
+// The way in (sign-in, then the first-time questions) covers the app until it is done.
+document.body.insertAdjacentHTML('beforeend', '<div id="gate" hidden></div>');
+const gate = document.querySelector('#gate'), appRoot = document.querySelector('#app');
 const main = document.querySelector('#main'), sheet = document.querySelector('#sheet');
+// Forms open above everything, the way in included (adding a class during the first-time questions).
+document.body.append(sheet, document.querySelector('#toast'));
 const clone = value => JSON.parse(JSON.stringify(value));
 navigator.storage?.persist?.().catch(() => {});
 
 // ── Rendering ──
 const route = () => { const [name, id] = location.hash.slice(1).split('/'); return {name: name || 'today', id: decodeURIComponent(id || '')}; };
 
+// What covers the app right now: signing in, loading the account on a new device, or the first-time questions.
+function gateScreen() {
+  if (ui.signingIn) return waitScreen('מתחבר…');
+  if (!cloud.user) return signInScreen(ui.gate || {});
+  if (!ui.firstSync && isEmpty(state) && !cloud.syncInfo().syncedAt) {
+    return ui.loadError ? waitScreen('אין חיבור לאינטרנט. בפעם הראשונה צריך חיבור כדי לטעון את המידע שלך.', {retry: true}) : waitScreen('טוען את המידע שלך…');
+  }
+  if (!ui.demo && !state.profile.onboarded) return onboardingScreen(ui.obStep || 'name', state, {added: ui.obAdded || {}});
+  return '';
+}
+
 function render() {
+  const cover = gateScreen();
+  if (cover) {
+    const focused = document.activeElement?.closest?.('#gate') ? document.activeElement.id : '';
+    gate.innerHTML = cover; gate.hidden = false; appRoot.inert = true; document.body.classList.add('gated');
+    (focused && gate.querySelector(`#${CSS.escape(focused)}`) || gate.querySelector('[autofocus]'))?.focus?.({preventScroll: true});
+    return;
+  }
+  if (!gate.hidden) { gate.hidden = true; gate.innerHTML = ''; appRoot.inert = false; document.body.classList.remove('gated'); }
   const {name, id} = route();
   const active = document.activeElement, focusKey = active?.dataset?.p !== undefined ? `[data-p="${active.dataset.p}"][data-field="${active.dataset.field}"]` : '';
   const screens = {today: () => today(state, ui), studies: () => studies(state), course: () => coursePage(state, id, ui),
     goals: () => goals(state), goal: () => goalPage(state, id, ui), calendar: () => calendar(state, ui),
     work: () => work(state, ui), job: () => jobPage(state, id, ui)};
   main.innerHTML = noticeBanner() + (name === 'today' ? installBanner() : '') + (screens[name] || screens.today)();
+  // The first try of "tell me" right after the questions, and one tip the first time each area opens.
+  if (ui.coach && (name === 'today' || !screens[name])) {
+    const anchor = ui.proposals ? main.querySelector('.review-card') : main.querySelector('.tell');
+    anchor?.insertAdjacentHTML('beforebegin', coachCard(ui.proposals ? 'review' : 'tell'));
+  }
+  if (!ui.demo && ['studies', 'work', 'goals', 'calendar'].includes(name) && !state.profile.tips.includes(name)) {
+    main.querySelector('.page-heading')?.insertAdjacentHTML('afterend', tipCard(name));
+  }
   const tab = {course: 'studies', goal: 'goals', job: 'work'}[name] || name;
   document.querySelectorAll('[data-route]').forEach(b => { const on = b.dataset.route === tab; b.classList.toggle('active', on); on ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current'); });
   if (focusKey) main.querySelector(focusKey)?.focus({preventScroll: true});
@@ -130,6 +163,14 @@ function setSync(status, at = ui.sync.at) {
   ui.sync = {status, at};
   if (sheet.open && sheet.querySelector('.sync-line')) sheet.querySelector('.sheet-page').innerHTML = accountSheet(cloud.user, {sync: ui.sync});
 }
+function wipeDevice() {
+  state = createState(); saveState(state); undoState = null; ui.firstSync = false; ui.coach = null; ui.obStep = ''; ui.obAdded = {};
+  try { localStorage.removeItem('studyflow.cloud.backup'); } catch { /* nothing kept */ }
+}
+async function signOutNow() {
+  await cloud.signOut(); wipeDevice(); ui.sync = {status: '', at: 0}; ui.gate = {};
+  close(); location.hash = 'today'; render();
+}
 const keepBackup = copy => { try { localStorage.setItem('studyflow.cloud.backup', JSON.stringify({at: Date.now(), state: copy})); } catch { /* best effort */ } };
 function useRemote(remote) {
   const at = Date.parse(remote.edited_at);
@@ -141,9 +182,11 @@ async function syncNow() {
   if (!cloud.user || ui.demo || syncing) return;
   syncing = true; setSync('syncing');
   try {
+    if (cloud.syncInfo().userId && cloud.syncInfo().userId !== cloud.user.id) wipeDevice();
+    cloud.setSyncInfo({userId: cloud.user.id});
     const info = cloud.syncInfo(), remote = await cloud.pull(), editedAt = info.editedAt || 0;
     const step = decide({editedAt, syncedAt: info.syncedAt || 0, empty: isEmpty(state)}, remote);
-    if (step === 'ask') { setSync(''); ui.pending = {remote}; open(chooseCopySheet(new Date(remote.edited_at).toLocaleDateString('he-IL'))); return; }
+    if (step === 'ask') { setSync(''); ui.firstSync = true; render(); ui.pending = {remote}; open(chooseCopySheet(new Date(remote.edited_at).toLocaleDateString('he-IL'))); return; }
     if (step.startsWith('pull')) { if (step === 'pull-keep-other') keepBackup(state); useRemote(remote); }
     if (step.startsWith('push')) {
       if (step === 'push-keep-other') keepBackup(remote.state);
@@ -153,9 +196,12 @@ async function syncNow() {
     }
     if (step === 'same') cloud.setSyncInfo({syncedAt: Date.parse(remote.edited_at)});
     setSync('', cloud.syncInfo().syncedAt || Date.now());
+    if (!ui.firstSync) { ui.firstSync = true; ui.loadError = false; render(); }
     if (step.endsWith('keep-other')) toast('היו שינויים גם כאן וגם במכשיר אחר. נשמר החדש, והשני נשמר כגיבוי במכשיר.');
   } catch (e) {
     setSync({offline: 'offline', 'no-table': 'setup', 'signed-out': ''}[e.code] ?? 'error');
+    if (!ui.firstSync) { ui.loadError = true; render(); }
+    if (e.code === 'signed-out') render();
   } finally { syncing = false; }
 }
 // Coming back from the sign-in email's link (or Google), the address carries the sign-in; it is taken and the address cleaned.
@@ -163,7 +209,7 @@ const redirect = cloud.takeRedirect(location.hash);
 if (redirect) {
   history.replaceState(null, '', `${location.pathname}#today`);
   if (redirect === 'expired') setTimeout(() => toast('קישור הכניסה כבר לא בתוקף. אפשר לבקש חדש ב"החשבון שלי".'), 300);
-  else cloud.loadUser().then(() => { toast('התחברת. כל השינויים יישמרו גם בענן.'); syncNow(); }).catch(() => {});
+  else { ui.signingIn = true; cloud.loadUser().then(() => syncNow(), () => {}).finally(() => { ui.signingIn = false; render(); }); }
 }
 window.addEventListener('online', () => syncNow());
 
@@ -247,7 +293,9 @@ function commitTell() {
   }, `${all.length === 1 ? 'נכנס' : `${all.length} פריטים נכנסו`} ללו״ז${all.every(i => i.date === all[0].date) ? ` של ${dayLabel(all[0].date)}` : ''}.`);
   // Show the day the items went to.
   ui.day = all.map(i => i.date).sort()[0];
-  ui.tellText = ''; ui.drafts = null; ui.proposals = null; render();
+  ui.tellText = ''; ui.drafts = null; ui.proposals = null;
+  if (ui.coach) { ui.coach = null; setTimeout(() => toast('מעולה! זה עכשיו ביומן. בכל אזור תקבל טיפ קצר בפעם הראשונה.'), 1800); }
+  render();
 }
 
 // ── Microphone (the browser's speech recognition; the app itself sends nothing) ──
@@ -376,11 +424,34 @@ document.addEventListener('click', event => {
     'resend-code': () => cloud.sendCode(ui.loginEmail).then(() => toast('שלחנו מייל חדש.'), e => toast(cloudError(e))),
     'google': () => { location.href = cloud.googleUrl(`${location.origin}${location.pathname}`); },
     'sync-now': () => syncNow(),
-    'sign-out': () => cloud.signOut().then(() => { ui.sync = {status: '', at: 0}; open(accountSheet(null)); toast('התנתקת. המידע נשאר במכשיר.'); }),
+    'sign-out': async () => {
+      await syncNow();
+      const info = cloud.syncInfo();
+      if ((info.editedAt || 0) > (info.syncedAt || 0)) return open(`${sheetTop('יש שינויים שעוד לא נשמרו בענן')}<p>אין כרגע חיבור, ולכן השינויים האחרונים עוד לא עלו לחשבון. אם תתנתק עכשיו, הם יימחקו מהמכשיר.</p><button class="primary submit-button" data-action="close">להישאר מחובר</button><button class="text-button muted" data-action="sign-out-anyway">להתנתק בכל זאת</button>`);
+      signOutNow();
+    },
+    'sign-out-anyway': () => signOutNow(),
     'delete-account': () => open(deleteAccountSheet()),
-    'confirm-delete-account': () => { t.disabled = true; cloud.deleteAccount().then(() => { ui.sync = {status: '', at: 0}; close(); toast('החשבון נמחק. מה שבמכשיר נשאר.'); }, e => { t.disabled = false; toast(cloudError(e)); }); },
+    'confirm-delete-account': () => { t.disabled = true; cloud.deleteAccount().then(() => { wipeDevice(); ui.sync = {status: '', at: 0}; ui.gate = {}; close(); location.hash = 'today'; render(); },  e => { t.disabled = false; toast(cloudError(e)); }); },
     'use-cloud': () => { const remote = ui.pending?.remote; close(); if (remote) { keepBackup(state); useRemote(remote); setSync('', Date.parse(remote.edited_at)); toast('עברת למה שבחשבון. מה שהיה במכשיר נשמר כגיבוי.'); } },
     'use-device': () => { const remote = ui.pending?.remote; close(); if (remote) { keepBackup(remote.state); cloud.setSyncInfo({editedAt: Date.now(), syncedAt: Date.parse(remote.edited_at)}); syncNow(); } },
+    // The way in
+    'gate-other': () => { ui.gate = {}; render(); },
+    'gate-resend': () => cloud.sendCode(ui.gate.email).then(() => toast('שלחנו מייל חדש.'), e => { ui.gate = {...ui.gate, error: cloudError(e)}; render(); }),
+    'gate-retry': () => { ui.loadError = false; render(); syncNow(); },
+    'ob-next': () => { ui.obStep = {name: 'areas', areas: 'day', day: 'setup'}[t.dataset.step] || 'setup'; render(); },
+    'ob-goal': () => {
+      const g = GOAL_PRESETS[t.dataset.preset]; if (!g) return;
+      ui.obAdded = {...ui.obAdded, [t.dataset.preset]: true};
+      mutate(() => state.goals.push({id: uid(), ...g, period: 'week', log: []}));
+    },
+    'ob-finish': () => {
+      ui.obStep = ''; ui.coach = 'tell'; ui.tellText = 'מחר ללמוד שעתיים בבוקר, ובערב אימון שעה';
+      location.hash = 'today';
+      mutate(() => { state.profile.onboarded = true; });
+    },
+    'coach-done': () => { ui.coach = null; render(); },
+    'tip-seen': () => mutate(() => { state.profile.tips.push(t.dataset.tip); }),
     'help': () => open(helpContent()),
     'settings': () => open(settingsForm(state.prefs)),
     'export': () => {
@@ -644,6 +715,29 @@ document.addEventListener('submit', event => {
         if (editing) Object.assign(state.shifts.find(s => s.id === editing), base, {date});
         else state.shifts.push(...free.map(d => ({id: uid(), ...base, date: d})));
       }, editing ? 'המשמרת עודכנה.' : `${free.length === 1 ? 'המשמרת נוספה' : `נוספו ${free.length} משמרות`} ללו״ז${busy.length ? `. ${busy.length} לא נוספו כי מתנגשות עם משהו אחר (${busy.map(d => dateLabel(d)).slice(0, 3).join(', ')})` : ''}.`);
+    }
+    if (kind === 'gate-email' || kind === 'gate-code') {
+      const button = form.querySelector('[type=submit]'); button.disabled = true; formError(form, '');
+      const failed = e => { button.disabled = false; formError(form, cloudError(e)); };
+      if (kind === 'gate-email') {
+        const email = get('email').toLowerCase();
+        cloud.sendCode(email).then(() => { ui.gate = {email, sent: true}; render(); }, failed);
+      } else {
+        cloud.verifyCode(ui.gate.email, get('code').replace(/\s/g, '')).then(() => { ui.gate = {}; render(); syncNow(); }, failed);
+      }
+      return;
+    }
+    if (kind === 'ob-name') { ui.obStep = 'areas'; mutate(() => { state.profile.name = get('name'); }); return; }
+    if (kind === 'ob-areas') { ui.obStep = 'day'; mutate(() => { state.profile.areas = fd.getAll('area').map(String); }); return; }
+    if (kind === 'ob-day') {
+      const dayStart = get('dayStart'), dayEnd = get('dayEnd');
+      if (toMin(dayEnd) <= toMin(dayStart)) throw Error('סוף היום צריך להיות אחרי ההתחלה.');
+      ui.obStep = 'setup'; mutate(() => { state.prefs = {...state.prefs, dayStart, dayEnd}; }); return;
+    }
+    if (kind === 'ob-job') {
+      const name = get('name'), wage = Number(get('wage'));
+      if (!name || !Number.isFinite(wage) || wage < 0) throw Error('צריך שם עסק ושכר לשעה.');
+      mutate(() => state.jobs.push({id: uid(), name, wage, overtime: true, color: nextJobColor()})); return;
     }
     if (kind === 'send-code' || kind === 'verify-code') {
       const button = form.querySelector('[type=submit]'); button.disabled = true; formError(form, '');

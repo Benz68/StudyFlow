@@ -49,7 +49,7 @@ export function today(state, ui, now = new Date()) {
   const fresh = !state.classes.length && !state.courses.length && !state.goals.length && !state.items.length && !state.jobs.length;
   return `
   ${ui.demo ? `<div class="demo-banner">זו דוגמה. שום דבר לא נשמר.<button data-action="exit-demo">חזרה אליי ${icon('arrow')}</button></div>` : ''}
-  ${heading('היום', `${greeting(now.getHours())} · יום ${DAY_NAMES[now.getDay()]}, ${dateLabel(date)}`)}
+  ${heading('היום', `${greeting(now.getHours())}${state.profile?.name ? `, ${esc(state.profile.name)}` : ''} · יום ${DAY_NAMES[now.getDay()]}, ${dateLabel(date)}`)}
   ${ui.proposals ? reviewCard(ui.proposals, date, state) : tellBox(ui)}
   ${fresh ? welcome() : `${alerts(state, date)}${dayStrip(state, ui.day || date, date)}${dayTimeline(state, ui.day || date, now)}${progressStrip(state, date)}`}`;
 }
