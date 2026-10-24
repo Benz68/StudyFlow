@@ -129,5 +129,5 @@ export function decide({editedAt = 0, syncedAt = 0, empty = false} = {}, remote 
   return 'same';
 }
 
-// Nothing worth keeping yet: a fresh install, before anything was added.
-export const isEmpty = s => !['classes', 'items', 'courses', 'goals', 'jobs', 'shifts'].some(k => s?.[k]?.length);
+// Nothing worth keeping yet: a fresh install, before the first-time questions were answered or anything was added.
+export const isEmpty = s => !s?.profile?.onboarded && !['classes', 'items', 'courses', 'goals', 'jobs', 'shifts'].some(k => s?.[k]?.length);

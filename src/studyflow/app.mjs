@@ -179,6 +179,8 @@ function endTour() {
   if (route().name !== 'today') location.hash = 'today'; else render();
   window.scrollTo(0, 0);
   toast('זהו! עכשיו תורך. מתחילים מ"ספר לי" או מהגדרת מערכת השעות.');
+  // While the sample was on show nothing was sent; what changed before it (the first-time answers) goes up now.
+  syncNow();
 }
 // Light the step's part of the screen and put the explanation beside it: the explanation sits at the bottom
 // (or the top, for something fixed low on the screen), and the lit part is scrolled into the space left above it.
@@ -465,7 +467,7 @@ document.addEventListener('click', event => {
     'move-item': () => { const item = state.items.find(i => i.id === id); if (!item) return; ui.pending = {move: item.id, options: moveOptions(item)}; open(moveForm(item, ui.pending.options)); },
     'move-to': () => { const o = ui.pending.options[Number(t.dataset.n)], itemId = ui.pending.move; close(); mutate(() => Object.assign(state.items.find(i => i.id === itemId), {date: o.date, start: o.start, end: o.end, done: false}), `הוזז ל־${o.start}.`); },
     'demo': () => { saved = clone(state); state = demoState(); ui.demo = true; render(); },
-    'exit-demo': () => { state = saved || state; saved = null; ui.demo = false; undoState = null; render(); },
+    'exit-demo': () => { state = saved || state; saved = null; ui.demo = false; undoState = null; render(); syncNow(); },
     // Account
     'account': () => open(accountSheet(cloud.user, {codeFor: cloud.user ? '' : ui.loginEmail || '', sync: ui.sync})),
     'account-other': () => { ui.loginEmail = ''; open(accountSheet(null)); },
