@@ -16,6 +16,7 @@ export function shell() {
     <a href="#today" class="brand" aria-label="StudyFlow, היום"><img class="brand-mark" src="src/studyflow/brand/mark.svg" alt="" width="36" height="36"><span>StudyFlow<small class="brand-tagline">כל היום, במקום אחד.</small></span></a>
     <button class="primary sidebar-add" data-action="focus-tell">${icon('mic')} ספר לי מה לעשות</button>
     <nav class="desktop-nav" aria-label="ניווט ראשי">${nav}</nav>
+    <button class="sidebar-settings sidebar-account" data-action="account">${icon('user')}<span>החשבון שלי</span></button>
     <button class="sidebar-settings sidebar-help" data-action="help">${icon('help')}<span>איך זה עובד?</span></button>
     <button class="sidebar-settings" data-action="settings">${icon('settings')}<span>העדפות</span></button>
   </aside>
@@ -23,6 +24,7 @@ export function shell() {
     <header class="topbar">
       <a href="#today" class="mobile-brand brand"><img class="brand-mark" src="src/studyflow/brand/mark.svg" alt="" width="32" height="32"><b>StudyFlow</b></a>
       <div class="topbar-actions">
+        <button class="icon-button account-button" data-action="account" aria-label="החשבון שלי">${icon('user')}</button>
         <button class="icon-button" data-action="help" aria-label="איך זה עובד?">${icon('help')}</button>
         <button class="icon-button" data-action="settings" aria-label="העדפות">${icon('settings')}</button>
       </div>

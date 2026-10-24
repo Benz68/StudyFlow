@@ -476,3 +476,21 @@ html{-webkit-text-size-adjust:100%;overscroll-behavior-y:none}
   /* Notes don't tilt on a small screen */
   .big-card.note,.card-grid>.note:nth-child(n){transform:none}
 }
+/* Account: optional, a code by email, and where the cloud copy stands */
+.account-lead{font-size:16px;line-height:1.7;margin:4px 0 18px}
+.account-card{display:flex;align-items:center;gap:14px;padding:16px;margin:6px 0 4px;border-radius:18px;background:var(--card);box-shadow:0 0 0 1px var(--line)}
+.account-card>div{display:flex;flex-direction:column;gap:4px;min-width:0}
+.account-card b{font-size:16px;direction:ltr;text-align:right;overflow-wrap:anywhere}
+.account-avatar{display:grid;place-items:center;width:48px;height:48px;border-radius:50%;flex:none;background:color-mix(in srgb,var(--teal) 14%,var(--card));color:var(--teal)}
+.account-avatar .icon{width:26px;height:26px}
+.sync-line{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+.sync-line .icon{width:16px;height:16px;flex:none}
+.sync-line.is-bad{color:var(--teal)}
+.account-actions{display:flex;flex-wrap:wrap;gap:6px 18px;margin:14px 0 6px}
+.code-input{font-size:28px!important;letter-spacing:.35em;text-align:center;font-variant-numeric:tabular-nums}
+.google-button{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:50px;border-radius:14px;background:var(--card);box-shadow:0 0 0 1.5px var(--line);font-size:16px;font-weight:600}
+.google-button b{font-size:18px;color:#4285f4}
+.or-line{display:flex;align-items:center;gap:12px;margin:16px 0 4px;color:var(--muted);font-size:13px}
+.or-line::before,.or-line::after{content:'';flex:1;border-top:1px solid var(--line)}
+.submit-button.danger{background:var(--teal)}
+.sidebar-account .icon,.account-button .icon{width:22px;height:22px}

@@ -3,6 +3,7 @@ import {esc, icon, duration, DAY_SHORT, DAY_NAMES, fullDayLabel, localDate, time
 import {payLines, money2, money, monthSummary} from './work.mjs';
 import {sheetTop} from './screens.mjs';
 import {UNITS} from './progress.mjs';
+import {GOOGLE_SIGN_IN} from './config.mjs';
 
 const error = '<p class="form-error" role="alert" data-error></p>';
 const submit = label => `${error}<button class="primary submit-button" type="submit">${label}</button>`;
@@ -183,10 +184,62 @@ export function settingsForm(prefs) {
     ${submit('לשמור')}
   </form>
   <details class="data-tools"><summary>גיבוי והעברה למכשיר אחר</summary>
-    <p>הנתונים נשמרים רק בדפדפן הזה, במכשיר הזה. כדי להעביר למכשיר אחר: מורידים גיבוי וטוענים אותו שם.</p>
+    <p>בלי חשבון, הנתונים נשמרים רק במכשיר הזה. עם חשבון (בכפתור "החשבון שלי") הם נשמרים גם בענן. אפשר גם להוריד גיבוי ולטעון אותו במכשיר אחר.</p>
     <button class="text-button" data-action="export">הורדת גיבוי</button>
     <label class="text-button import-label">טעינת גיבוי<input type="file" data-import accept="application/json,.json"></label>
   </details>`;
+}
+
+// The account: optional. Signed out it explains what it adds and signs in with a code by email;
+// signed in it shows where the copy stands and the way out (sign out, download, delete for good).
+export function accountSheet(user, {codeFor = '', sync = {}} = {}) {
+  if (user) {
+    const when = sync.at ? new Date(sync.at).toLocaleString('he-IL', {day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit'}) : '';
+    const status = {syncing: 'מסנכרן…', offline: 'אין חיבור. השינויים יעלו כשיחזור האינטרנט.', error: 'הסנכרון נכשל. ננסה שוב בקרוב.',
+      setup: 'השרת עוד לא מוכן לשמירה (צריך להריץ את קובץ ההגדרה ב-Supabase).'}[sync.status] || (when ? `נשמר בענן · ${when}` : 'עוד לא נשמר בענן.');
+    return `${sheetTop('החשבון שלי')}
+    <section class="account-card"><span class="account-avatar">${icon('user')}</span><div><b>${esc(user.email || 'מחובר')}</b><small class="sync-line${sync.status === 'error' || sync.status === 'setup' ? ' is-bad' : ''}">${icon('cloud')} ${esc(status)}</small></div></section>
+    <button class="primary submit-button" data-action="sync-now">${icon('cloud')} לסנכרן עכשיו</button>
+    <div class="account-actions">
+      <button class="text-button" data-action="export">${icon('file')} הורדת המידע שלי</button>
+      <button class="text-button" data-action="sign-out">להתנתק</button>
+      <button class="text-button muted" data-action="delete-account">${icon('trash')} מחיקת החשבון</button>
+    </div>
+    <p class="field-help">בהתנתקות המידע נשאר גם במכשיר הזה וגם בחשבון.</p>`;
+  }
+  if (codeFor) {
+    return `${sheetTop('בדוק את המייל')}
+    <p class="account-lead">שלחנו מייל ל־<b dir="ltr">${esc(codeFor)}</b>. לוחצים בו על הקישור, באותו מכשיר, ונכנסים מחוברים. הוא מגיע תוך דקה, וכדאי לבדוק גם בספאם.</p>
+    <form data-form="verify-code">
+      <label for="login-code">יש במייל קוד? אפשר להקליד אותו כאן</label>
+      <input id="login-code" name="code" class="code-input" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,8}" maxlength="8" required autofocus dir="ltr">
+      ${submit('כניסה')}
+    </form>
+    <div class="account-actions"><button class="text-button" data-action="resend-code">לשלוח שוב</button><button class="text-button" data-action="account-other">מייל אחר</button></div>`;
+  }
+  return `${sheetTop('החשבון שלי')}
+  <p class="account-lead">חשבון שומר את הכול בענן: בטלפון חדש או במחשב, מתחברים והכול חוזר. בלי חשבון, הכול נשאר רק במכשיר הזה.</p>
+  ${GOOGLE_SIGN_IN ? `<button class="google-button" data-action="google"><b>G</b> המשך עם Google</button><div class="or-line"><span>או</span></div>` : ''}
+  <form data-form="send-code">
+    <label for="login-email">מייל</label>
+    <input id="login-email" name="email" type="email" autocomplete="email" inputmode="email" required dir="ltr" placeholder="name@example.com">
+    ${submit('שלחו לי מייל כניסה')}
+  </form>
+  <p class="field-help">בלי סיסמה: בכל כניסה מקבלים מייל עם קישור כניסה.</p>`;
+}
+
+export function deleteAccountSheet() {
+  return `${sheetTop('למחוק את החשבון?')}
+  <p>החשבון והעותק שבענן יימחקו לצמיתות, ואי אפשר לשחזר אותם. מה שיש במכשיר הזה יישאר בו.</p>
+  <button class="primary submit-button danger" data-action="confirm-delete-account">למחוק לצמיתות</button>
+  <button class="text-button" data-action="account">ביטול</button>`;
+}
+
+export function chooseCopySheet(remoteWhen) {
+  return `${sheetTop('יש מידע גם במכשיר וגם בחשבון')}
+  <p>באיזה מהם להשתמש? השני יישמר כגיבוי במכשיר, כך ששום דבר לא נמחק.</p>
+  <button class="primary submit-button" data-action="use-cloud">${icon('cloud')} מה שבחשבון${remoteWhen ? ` · ${esc(remoteWhen)}` : ''}</button>
+  <button class="text-button" data-action="use-device">מה שבמכשיר הזה (יחליף את מה שבחשבון)</button>`;
 }
 
 export function helpContent() {

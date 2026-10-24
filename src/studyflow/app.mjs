@@ -4,7 +4,8 @@ import {semesterFields, updateSemester} from './timetable.mjs';
 import {esc, uid, localDate, addDays, toMin, toClock, weekStart, validDate, dayLabel, dateLabel, PALETTE, icon} from './util.mjs';
 import {loadState, saveState, validateState, migrateV1, demoState} from './store.mjs';
 import {shell, sheetTop, today, studies, coursePage, goals, goalPage, calendar, work, jobPage, openQuestions} from './screens.mjs';
-import {classForm, icsPreview, courseForm, topicsForm, goalForm, logForm, moveForm, settingsForm, helpContent, jobForm, shiftForm, weekShiftsForm, payCard} from './dialogs.mjs';
+import {classForm, icsPreview, courseForm, topicsForm, goalForm, logForm, moveForm, settingsForm, helpContent, jobForm, shiftForm, weekShiftsForm, payCard, accountSheet, deleteAccountSheet, chooseCopySheet} from './dialogs.mjs';
+import {createCloud, decide, isEmpty} from './cloud.mjs';
 import {parseTell} from './tell.mjs';
 import {propose, toItems, toShifts} from './propose.mjs';
 import {findTime, planRest, shiftClashes, conflictsFor, classesOn, placeFlexible, alternatives} from './schedule.mjs';
@@ -15,6 +16,7 @@ import {amountForSession} from './progress.mjs';
 
 const Recognition = globalThis.SpeechRecognition || globalThis.webkitSpeechRecognition;
 let {state, notice} = loadState();
+const cloud = createCloud();
 let saved = null, undoState = null, toastTimer = null, recognition = null, returnFocus = null;
 const ui = {tellText: '', drafts: null, proposals: null, find: null, week: '', demo: false, micAvailable: !!Recognition, listening: false, pending: null};
 
@@ -110,10 +112,60 @@ function mutate(change, message) {
   undoState = clone(state);
   change();
   state = validateState(state);
-  if (!ui.demo) { const ok = saveState(state); notice = ok ? (notice === 'unsaved' ? '' : notice) : 'unsaved'; }
+  if (!ui.demo) { const ok = saveState(state); notice = ok ? (notice === 'unsaved' ? '' : notice) : 'unsaved'; changedHere(); }
   render();
   if (message) toast(message, true);
 }
+
+// ── Account and cloud copy ──
+// The device copy is the one the app works on. With an account it is also kept in the cloud: sent a moment
+// after each change, and checked whenever the app comes back to the front or the connection returns.
+ui.sync = {status: '', at: cloud.syncInfo().syncedAt || 0};
+let syncTimer = null, syncing = false;
+const CLOUD_ERRORS = {offline: 'אין חיבור לאינטרנט.', 'too-many': 'יותר מדי ניסיונות. אפשר לנסות שוב בעוד כמה דקות.',
+  'bad-code': 'הקוד לא נכון או שפג תוקפו. אפשר לבקש קוד חדש.', 'provider-off': 'הכניסה עם Google עוד לא מופעלת.', failed: 'משהו השתבש. אפשר לנסות שוב.'};
+const cloudError = e => CLOUD_ERRORS[e?.code] || CLOUD_ERRORS.failed;
+function changedHere() { cloud.setSyncInfo({editedAt: Date.now()}); if (cloud.user) { clearTimeout(syncTimer); syncTimer = setTimeout(syncNow, 2000); } }
+function setSync(status, at = ui.sync.at) {
+  ui.sync = {status, at};
+  if (sheet.open && sheet.querySelector('.sync-line')) sheet.querySelector('.sheet-page').innerHTML = accountSheet(cloud.user, {sync: ui.sync});
+}
+const keepBackup = copy => { try { localStorage.setItem('studyflow.cloud.backup', JSON.stringify({at: Date.now(), state: copy})); } catch { /* best effort */ } };
+function useRemote(remote) {
+  const at = Date.parse(remote.edited_at);
+  try { state = validateState(remote.state); } catch { return false; }
+  saveState(state); undoState = null; cloud.setSyncInfo({editedAt: at, syncedAt: at}); render();
+  return true;
+}
+async function syncNow() {
+  if (!cloud.user || ui.demo || syncing) return;
+  syncing = true; setSync('syncing');
+  try {
+    const info = cloud.syncInfo(), remote = await cloud.pull(), editedAt = info.editedAt || 0;
+    const step = decide({editedAt, syncedAt: info.syncedAt || 0, empty: isEmpty(state)}, remote);
+    if (step === 'ask') { setSync(''); ui.pending = {remote}; open(chooseCopySheet(new Date(remote.edited_at).toLocaleDateString('he-IL'))); return; }
+    if (step.startsWith('pull')) { if (step === 'pull-keep-other') keepBackup(state); useRemote(remote); }
+    if (step.startsWith('push')) {
+      if (step === 'push-keep-other') keepBackup(remote.state);
+      const at = editedAt || Date.now();
+      await cloud.push(state, at);
+      cloud.setSyncInfo({editedAt: at, syncedAt: at});
+    }
+    if (step === 'same') cloud.setSyncInfo({syncedAt: Date.parse(remote.edited_at)});
+    setSync('', cloud.syncInfo().syncedAt || Date.now());
+    if (step.endsWith('keep-other')) toast('היו שינויים גם כאן וגם במכשיר אחר. נשמר החדש, והשני נשמר כגיבוי במכשיר.');
+  } catch (e) {
+    setSync({offline: 'offline', 'no-table': 'setup', 'signed-out': ''}[e.code] ?? 'error');
+  } finally { syncing = false; }
+}
+// Coming back from the sign-in email's link (or Google), the address carries the sign-in; it is taken and the address cleaned.
+const redirect = cloud.takeRedirect(location.hash);
+if (redirect) {
+  history.replaceState(null, '', `${location.pathname}#today`);
+  if (redirect === 'expired') setTimeout(() => toast('קישור הכניסה כבר לא בתוקף. אפשר לבקש חדש ב"החשבון שלי".'), 300);
+  else cloud.loadUser().then(() => { toast('התחברת. כל השינויים יישמרו גם בענן.'); syncNow(); }).catch(() => {});
+}
+window.addEventListener('online', () => syncNow());
 
 // ── Dialogs ──
 // Every form opens as a full page of its own, never a box over part of the screen.
@@ -292,7 +344,7 @@ document.addEventListener('click', event => {
   const routeButton = event.target.closest('[data-route]');
   if (routeButton) { location.hash = routeButton.dataset.route; return; }
   if (event.target.closest('.toast-undo')) {
-    if (undoState) { state = undoState; undoState = null; if (!ui.demo) saveState(state); render(); toast('השינוי בוטל.'); }
+    if (undoState) { state = undoState; undoState = null; if (!ui.demo) { saveState(state); changedHere(); } render(); toast('השינוי בוטל.'); }
     return;
   }
   const t = event.target.closest('[data-action]'); if (!t) return;
@@ -318,6 +370,17 @@ document.addEventListener('click', event => {
     'exit-demo': () => { state = saved || state; saved = null; ui.demo = false; undoState = null; render(); },
     'install': async () => { const e = installEvent; if (!e) return; e.prompt(); await e.userChoice.catch(() => null); installEvent = null; render(); },
     'hide-install': () => { try { localStorage.setItem('studyflow.install.hidden', '1'); } catch { /* fine */ } render(); },
+    // Account
+    'account': () => open(accountSheet(cloud.user, {codeFor: cloud.user ? '' : ui.loginEmail || '', sync: ui.sync})),
+    'account-other': () => { ui.loginEmail = ''; open(accountSheet(null)); },
+    'resend-code': () => cloud.sendCode(ui.loginEmail).then(() => toast('שלחנו מייל חדש.'), e => toast(cloudError(e))),
+    'google': () => { location.href = cloud.googleUrl(`${location.origin}${location.pathname}`); },
+    'sync-now': () => syncNow(),
+    'sign-out': () => cloud.signOut().then(() => { ui.sync = {status: '', at: 0}; open(accountSheet(null)); toast('התנתקת. המידע נשאר במכשיר.'); }),
+    'delete-account': () => open(deleteAccountSheet()),
+    'confirm-delete-account': () => { t.disabled = true; cloud.deleteAccount().then(() => { ui.sync = {status: '', at: 0}; close(); toast('החשבון נמחק. מה שבמכשיר נשאר.'); }, e => { t.disabled = false; toast(cloudError(e)); }); },
+    'use-cloud': () => { const remote = ui.pending?.remote; close(); if (remote) { keepBackup(state); useRemote(remote); setSync('', Date.parse(remote.edited_at)); toast('עברת למה שבחשבון. מה שהיה במכשיר נשמר כגיבוי.'); } },
+    'use-device': () => { const remote = ui.pending?.remote; close(); if (remote) { keepBackup(remote.state); cloud.setSyncInfo({editedAt: Date.now(), syncedAt: Date.parse(remote.edited_at)}); syncNow(); } },
     'help': () => open(helpContent()),
     'settings': () => open(settingsForm(state.prefs)),
     'export': () => {
@@ -582,6 +645,19 @@ document.addEventListener('submit', event => {
         else state.shifts.push(...free.map(d => ({id: uid(), ...base, date: d})));
       }, editing ? 'המשמרת עודכנה.' : `${free.length === 1 ? 'המשמרת נוספה' : `נוספו ${free.length} משמרות`} ללו״ז${busy.length ? `. ${busy.length} לא נוספו כי מתנגשות עם משהו אחר (${busy.map(d => dateLabel(d)).slice(0, 3).join(', ')})` : ''}.`);
     }
+    if (kind === 'send-code' || kind === 'verify-code') {
+      const button = form.querySelector('[type=submit]'); button.disabled = true; formError(form, '');
+      const done = () => { button.disabled = false; };
+      if (kind === 'send-code') {
+        const email = get('email').toLowerCase();
+        cloud.sendCode(email).then(() => { ui.loginEmail = email; open(accountSheet(null, {codeFor: email})); }, e => { done(); formError(form, cloudError(e)); });
+      } else {
+        cloud.verifyCode(ui.loginEmail, get('code').replace(/\s/g, '')).then(user => {
+          ui.loginEmail = ''; open(accountSheet(user, {sync: ui.sync})); toast('התחברת. כל השינויים יישמרו גם בענן.'); syncNow();
+        }, e => { done(); formError(form, cloudError(e)); });
+      }
+      return;
+    }
     if (kind === 'settings') {
       const dayStart = get('dayStart'), dayEnd = get('dayEnd');
       if (toMin(dayEnd) <= toMin(dayStart)) throw Error('סוף היום צריך להיות אחרי ההתחלה.');
@@ -595,5 +671,6 @@ document.addEventListener('submit', event => {
 document.addEventListener('keydown', e => { if (e.target.id === 'tell-text' && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); runTell(); } });
 window.addEventListener('hashchange', () => { ui.find = null; render(); window.scrollTo(0, 0); main.focus({preventScroll: true}); });
 // Coming back to the app later in the day refreshes "now" (free time, greetings).
-document.addEventListener('visibilitychange', () => { if (!document.hidden && !sheet.open) render(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) return; if (!sheet.open) render(); syncNow(); });
 render();
+syncNow();
