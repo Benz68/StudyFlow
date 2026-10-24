@@ -27,6 +27,8 @@ export function propose(state, drafts, now = new Date()) {
     p.minutes = b > a ? b - a : b + 1440 - a;
     if (p.date < today) { p.status = 'past'; continue; }
     const hits = hitsFor(p);
+    // The person said yes to the overlap (a lecture on Zoom during a shift): it goes in, and says what it overlaps.
+    if (hits.length && p.allowOverlap) { Object.assign(p, {status: 'ok', overlapsWith: [...new Set(hits.map(h => h.title))]}); block(p); continue; }
     if (hits.length) {
       Object.assign(p, {status: 'conflict', conflicts: [...new Set(hits.map(h => h.title))],
         options: b > a ? alternatives(state, p.date, p.minutes, p.start, {now, extra: extraOn(p.date)}) : []});
@@ -56,10 +58,10 @@ export function toItems(proposals, makeId) {
   return proposals.filter(p => p.status === 'ok' && p.kind !== 'shift').map(p => ({
     id: makeId(), title: p.title, date: p.date, kind: p.kind, fixed: !!(p.fixed || p.allDay), done: false,
     ...(p.allDay ? {allDay: true} : {start: p.start, end: p.end}),
-    ...(p.courseId ? {courseId: p.courseId} : {}), ...(p.goalId ? {goalId: p.goalId} : {}),
+    ...(p.courseId ? {courseId: p.courseId} : {}), ...(p.goalId ? {goalId: p.goalId} : {}), ...(p.note ? {note: p.note} : {}),
   }));
 }
 export function toShifts(proposals, makeId) {
   return proposals.filter(p => p.status === 'ok' && p.kind === 'shift' && p.jobId)
-    .map(p => ({id: makeId(), jobId: p.jobId, date: p.date, start: p.start, end: p.end, breakMinutes: 0, tips: 0}));
+    .map(p => ({id: makeId(), jobId: p.jobId, date: p.date, start: p.start, end: p.end, breakMinutes: 0, tips: 0, ...(p.note ? {note: p.note} : {})}));
 }

@@ -20,7 +20,7 @@ export const defaultPrefs = Object.freeze({dayStart: '08:00', dayEnd: '22:00', b
 
 export function createState() {
   return {version: VERSION, classes: [], items: [], courses: [], goals: [], jobs: [], shifts: [], prefs: {...defaultPrefs},
-    profile: {name: '', areas: [], onboarded: false, tips: [], terms: ''}};
+    profile: {name: '', areas: [], onboarded: false, tips: [], terms: '', moneyGoal: 0, moneyFor: '', activeDays: []}};
 }
 
 function prefs(p = {}) {
@@ -61,6 +61,7 @@ export function validateState(value) {
     ...(i.allDay === true ? {allDay: true} : {start: i.start, end: i.end}),
     kind: pick(i.kind, ['study', 'task', 'goal', 'event', 'other'], 'other'), fixed: i.fixed === true, done: i.done === true,
     ...(courseIds.has(i.courseId) ? {courseId: i.courseId} : {}), ...(goalIds.has(i.goalId) ? {goalId: i.goalId} : {}),
+    ...(text(i.note, 200) ? {note: text(i.note, 200)} : {}),
   })));
   // Each workplace keeps its own color; older saves get one by their place in the list.
   state.jobs = unique(list(value.jobs, 30).filter(j => j && text(j.id) && text(j.name))).map((j, i) => ({
@@ -70,7 +71,8 @@ export function validateState(value) {
   state.shifts = unique(list(value.shifts, 3000).filter(s => s && text(s.id) && jobIds.has(s.jobId) && validDate(s.date)
     && toMin(s.start) !== null && toMin(s.end) !== null && s.start !== s.end).map(s => ({
     id: text(s.id), jobId: s.jobId, date: s.date, start: s.start, end: s.end,
-    breakMinutes: Math.round(number(s.breakMinutes, 0, 0, 240)), tips: Math.round(number(s.tips, 0, 0, 100000))})));
+    breakMinutes: Math.round(number(s.breakMinutes, 0, 0, 240)), tips: Math.round(number(s.tips, 0, 0, 100000)),
+    ...(text(s.note, 200) ? {note: text(s.note, 200)} : {})})));
   state.prefs = prefs(value.prefs);
   // Who this is and what they set up first. A planner saved before profiles existed already has its things,
   // so it counts as set up and skips the first-time questions.
@@ -78,7 +80,10 @@ export function validateState(value) {
   const hadThings = ['classes', 'items', 'courses', 'goals', 'jobs', 'shifts'].some(k => Array.isArray(value[k]) && value[k].length);
   state.profile = {name: text(p?.name, 40), areas: [...new Set(list(p?.areas, 3).filter(a => ['studies', 'work', 'goals'].includes(a)))],
     onboarded: p ? p.onboarded === true : hadThings, tips: [...new Set(list(p?.tips, 20).filter(t => typeof t === 'string' && t.length <= 20))],
-    terms: validDate(p?.terms) ? p.terms : ''};
+    terms: validDate(p?.terms) ? p.terms : '',
+    // A monthly money goal ("3,000 ₪ for the trip"), and the days something was updated, for the streak.
+    moneyGoal: Math.round(number(p?.moneyGoal, 0, 0, 1000000)), moneyFor: text(p?.moneyFor, 40),
+    activeDays: [...new Set(list(p?.activeDays, 1000).filter(validDate))].sort().slice(-400)};
   return state;
 }
 

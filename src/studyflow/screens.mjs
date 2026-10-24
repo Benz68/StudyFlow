@@ -4,6 +4,7 @@ import {esc, icon, duration, localDate, addDays, weekStart, dateLabel, dayLabel,
 import {dayAgenda, plannedMinutes} from './schedule.mjs';
 import {courseProgress, goalProgress, goalSummary, unitLabel, goalStats} from './progress.mjs';
 import {monthSummary, shiftPay, money, hoursLabel, shiftLabel, overnight} from './work.mjs';
+import {streak, upcomingExams, moneyGoal, weekSummary, summaryWeek, hasSomething, weekStats} from './insights.mjs';
 
 const KIND = {study: 'לימודים', task: 'משימה', goal: 'מטרה אישית', event: 'אירוע', other: 'כללי', shift: 'משמרת'};
 const STATUS = {new: 'עוד לא התחלתי', learning: 'בלמידה', done: 'סיימתי'};
@@ -51,7 +52,53 @@ export function today(state, ui, now = new Date()) {
   ${ui.demo ? `<div class="demo-banner">זו דוגמה. שום דבר לא נשמר.<button data-action="exit-demo">חזרה אליי ${icon('arrow')}</button></div>` : ''}
   ${heading('היום', `${greeting(now.getHours())}${state.profile?.name ? `, ${esc(state.profile.name)}` : ''} · יום ${DAY_NAMES[now.getDay()]}, ${dateLabel(date)}`)}
   ${ui.proposals ? reviewCard(ui.proposals, date, state) : tellBox(ui)}
-  ${fresh ? welcome() : `${alerts(state, date)}${dayStrip(state, ui.day || date, date)}${dayTimeline(state, ui.day || date, now)}${progressStrip(state, date)}`}`;
+  ${fresh ? welcome() : `${boost(state, date, now)}${alerts(state, date)}${dayStrip(state, ui.day || date, date)}${dayTimeline(state, ui.day || date, now)}${progressStrip(state, date)}`}`;
+}
+
+// What makes coming back worth it: the run of days, the money goal, the exams coming closer, the week in short.
+// Paper notes like the rest of the app: a flame that burns while the run goes on, the coin jar of the month,
+// a tear-off calendar page for the next exam (the others listed under it), and a sticky note of the week in numbers.
+const FLAME = '<svg class="flame" viewBox="0 0 64 80" aria-hidden="true"><path class="flame-out" d="M32 4c4 14 20 22 20 44 0 15-9 26-20 26S12 63 12 48c0-10 5-16 9-21 1 7 4 11 8 12-2-12 1-24 3-35Z"/><path class="flame-in" d="M32 36c3 8 11 12 11 22 0 8-5 13-11 13s-11-5-11-13c0-6 4-9 6-12 1 4 3 6 5 6-1-6-1-11 0-16Z"/></svg>';
+const PEN_LOOP = '<svg class="pen-loop" viewBox="0 0 40 40" aria-hidden="true"><path pathLength="1" d="M30 7 C 22 2, 8 4, 5 15 C 2 27, 12 37, 23 35 C 34 33, 38 22, 35 13 C 33 7, 27 4, 19 5"/></svg>';
+
+function boost(state, date, now) {
+  const run = streak(state.profile.activeDays, date), notes = [];
+  const fire = run.today ? 'is-lit' : run.days ? 'is-waiting' : 'is-out';
+  notes.push(`<article class="big-card note boost-note streak-note ${fire}" style="${tint('#e0702a')}">
+    <span class="tape" aria-hidden="true"></span>
+    <div class="streak-head">${FLAME}<div><h3>${run.days ? `${run.days} ${run.days === 1 ? 'יום' : 'ימים'} ברצף` : 'מדליקים רצף'}</h3>
+      <p>${run.today ? 'עדכנת היום. האש בוערת!' : run.days ? 'האש עוד דולקת. עדכון אחד היום שומר עליה' : 'מעדכנים משהו כל יום, והאש נדלקת'}</p></div></div>
+    <div class="streak-days" aria-label="שבעת הימים האחרונים">${run.week.map((d, i) => `<span class="${d.done ? 'is-done' : ''}${i === 6 ? ' is-today' : ''}" style="--n:${i}"><small>${i === 6 ? 'היום' : DAY_SHORT[new Date(`${d.date}T12:00:00`).getDay()]}</small><i>${d.done ? icon('check') : ''}</i>${i === 6 ? PEN_LOOP : ''}</span>`).join('')}</div>
+    ${run.best > run.days ? `<p class="streak-best">השיא שלך: ${run.best} ימים${run.days ? ` · עוד ${run.best - run.days + 1} ושברת אותו` : ''}</p>` : run.days >= 3 ? '<p class="streak-best">זה השיא שלך!</p>' : ''}
+  </article>`);
+  if (state.jobs.length) {
+    const m = moneyGoal(state, now), goalFor = state.profile.moneyFor ? ` ל${esc(state.profile.moneyFor)}` : '';
+    notes.push(`<button class="big-card note boost-note money-note" data-action="money-goal" style="${tint('#d9a12a')}">
+      <span class="tape" aria-hidden="true"></span><h3>הכסף של החודש</h3>
+      <div class="money-body">${jar(m.earned, m.goal || m.expected, null)}<div class="money-side"><b class="note-amount">${money(m.earned)}</b><span>נכנס עד היום</span>
+        ${m.goal ? `${bar(m.percent, `${m.percent}% מהיעד`)}<small>${m.reached ? `הגעת ליעד${goalFor}!` : m.left ? `יעד ${money(m.goal)}${goalFor} · עוד ${money(m.left)}` : `עם המשמרות המתוכננות מגיעים ליעד${goalFor}`}</small>`
+          : '<small class="note-cta">+ יעד לחודש. טיסה? רכב?</small>'}</div></div></button>`);
+  }
+  const [first, ...rest] = upcomingExams(state, date, 45);
+  if (first) {
+    const link = x => `#course/${esc(x.course.id)}`;
+    notes.push(`<article class="big-card note boost-note exam-note" style="${tint('#b8452f')}">
+      <span class="tape" aria-hidden="true"></span>
+      <div class="exam-top"><a class="exam-page${first.exam <= 7 ? ' is-near' : ''}" href="${link(first)}" aria-label="מבחן ב${esc(first.course.name)} ${countdown(first.exam)}">
+        <span class="exam-page-head">מבחן</span><b>${first.exam || '!'}</b><span class="exam-page-unit">${first.exam === 0 ? 'היום' : first.exam === 1 ? 'יום' : 'ימים'}</span></a>
+      <div class="exam-info"><h3><a href="${link(first)}">${esc(first.course.name)}</a></h3>
+        ${first.total ? `${bar(first.percent, `${first.percent}% מהחומר`)}<p>${first.percent}% מהחומר${first.next ? ` · הבא: ${esc(first.next.title)}` : ''}</p>` : '<p>מוסיפים את נושאי הקורס ועוקבים אחרי ההתקדמות</p>'}</div></div>
+      ${rest.length ? `<ul class="exam-more">${rest.slice(0, 3).map(x => `<li><a href="${link(x)}">${esc(x.course.name)}</a><span>${countdown(x.exam)}</span></li>`).join('')}</ul>` : ''}
+    </article>`);
+  }
+  const start = summaryWeek(date), w = weekSummary(state, start, now);
+  if (hasSomething(w)) {
+    notes.push(`<article class="big-card note boost-note week-note">
+      <span class="tape" aria-hidden="true"></span><h3>${start < weekStart(date) ? 'השבוע שעבר' : 'השבוע שלי'}</h3>
+      <ul class="week-lines">${weekStats(w).slice(0, 5).map(s => `<li><b>${esc(s.value)}</b> ${esc(s.label)}</li>`).join('')}</ul>
+    </article>`);
+  }
+  return `<section class="boost">${section('ההישגים שלי')}<div class="boost-grid">${notes.join('')}</div></section>`;
 }
 
 function dayStrip(state, selected, todayDate) {
@@ -129,7 +176,7 @@ function reviewCard(proposals, todayDate, state) {
       <button class="text-button" data-action="edit-tell">לשנות את מה שכתבתי</button>
       <button class="text-button muted" data-action="cancel-tell">ביטול</button>
     </div>
-    ${blocked && proposals.length ? `<p class="field-help review-blocked">${proposals.some(p => openQuestions(p).length) ? 'כדי להמשיך, עונים על השאלות המסומנות: באיזה יום ומתי.' : 'כדי להמשיך, בוחרים שעה חלופית לכל פריט שמסומן.'}</p>` : ''}
+    ${blocked && proposals.length ? `<p class="field-help review-blocked">${proposals.some(p => openQuestions(p).length) ? 'כדי להמשיך, עונים על השאלות המסומנות: באיזה יום ומתי.' : 'כדי להמשיך, בוחרים לכל פריט שמסומן שעה אחרת, או "להכניס בכל זאת".'}</p>` : ''}
   </section>`;
 }
 
@@ -137,7 +184,9 @@ function proposalStatus(p, i, todayDate) {
   const options = (p.options || []).map((o, n) => `<button class="slot" data-action="pick-option" data-p="${i}" data-o="${n}">${o.date !== p.date ? esc(dayLabel(o.date, todayDate)) + ' · ' : ''}<bdi dir="ltr">${o.start}–${o.end}</bdi></button>`).join('');
   if (p.status === 'past') return `<p class="proposal-status warn">${icon('alert')} התאריך הזה כבר עבר. בוחרים יום אחר.</p>`;
   if (p.status === 'invalid') return `<p class="proposal-status warn">${icon('alert')} שעת הסיום צריכה להיות אחרי שעת ההתחלה.</p>`;
-  if (p.status === 'conflict') return `<div class="proposal-status warn">${icon('alert')} <span>מתנגש עם <b>${p.conflicts.map(esc).join(', ')}</b>.${options ? ' שעות פנויות באותו יום:' : ' אין שעה פנויה מתאימה ביום הזה.'}</span><div class="slots">${options}</div></div>`;
+  if (p.status === 'conflict') return `<div class="proposal-status warn">${icon('alert')} <span>חופף ל<b>${p.conflicts.map(esc).join(', ')}</b>.${options ? ' אפשר לבחור שעה פנויה, או להשאיר כך:' : ''}</span><div class="slots">${options}<button class="slot overlap-ok" data-action="allow-overlap" data-p="${i}">${icon('check')} להכניס בכל זאת</button></div></div>`;
+  if (p.overlapsWith?.length) return `<div class="proposal-status ok">${icon('check')} <span>${esc(fullDayLabel(p.date, todayDate))} · <bdi dir="ltr">${p.start}–${p.end}</bdi> · חופף ל${p.overlapsWith.map(esc).join(', ')}</span>
+    <input class="proposal-note" data-p="${i}" data-field="note" value="${esc(p.note || '')}" maxlength="200" placeholder="הערה (לא חובה), למשל: השיעור בזום" aria-label="הערה"></div>`;
   if (p.status === 'noroom') return `<div class="proposal-status warn">${icon('alert')} <span>אין זמן פנוי מתאים ${p.deadline ? 'עד המועד' : 'ביום הזה'}.${options ? ' אפשר:' : ''}</span><div class="slots">${options}</div></div>`;
   if (p.allDay) return `<p class="proposal-status ok">${icon('check')} כל היום, ${esc(fullDayLabel(p.date, todayDate))}${p.hides?.length ? `. השיעורים ביום הזה (${p.hides.map(esc).join(', ')}) יוסתרו` : ''}${p.overlaps?.length ? `. כבר מתוכנן באותו יום: ${p.overlaps.map(esc).join(', ')}` : ''}</p>`;
   const notes = [p.outsidePart ? 'לא היה מקום בחלק היום שביקשת' : '', p.kind === 'shift' && toMin(p.end) <= toMin(p.start) ? 'נגמרת למחרת' : '',
@@ -164,13 +213,15 @@ function welcome() {
 function alerts(state, date) {
   const list = [];
   for (const c of state.courses) {
-    const p = courseProgress(c, date);
-    if (p.exam !== null && p.exam <= 7) list.push(`<a href="#course/${esc(c.id)}">מבחן ב${esc(c.name)} ${countdown(p.exam)}</a>`);
+    // Exams have their own countdown cards above.
     for (const d of c.deadlines) if (!d.done && d.date >= date && d.date <= addDays(date, 3)) list.push(`<a href="#course/${esc(c.id)}">${esc(d.title)} (${esc(c.name)}) ${countdown((new Date(`${d.date}T12:00:00`) - new Date(`${date}T12:00:00`)) / 864e5)}</a>`);
   }
   if (plannedMinutes(state, date) > 10 * 60) list.push('<span>היום עמוס מאוד. אולי כדאי להזיז משהו למחר?</span>');
   return list.length ? `<section class="alerts" aria-label="תזכורות">${list.map(a => `<p>${icon('alert')} ${a}</p>`).join('')}</section>` : '';
 }
+
+// What the person chose to overlap, and their own note ("the lecture is on Zoom").
+const entryExtras = e => `${e.overlaps ? `<p class="entry-overlap">${icon('alert')} חופף ל${e.overlaps.map(esc).join(', ')}</p>` : ''}${e.note ? `<p class="entry-note">${esc(e.note)}</p>` : ''}`;
 
 export function entryRow(e, state, now = new Date()) {
   if (e.type === 'free') return `<div class="free-row"><span><bdi dir="ltr">${e.start}–${e.end}</bdi></span> פנוי · ${duration(e.minutes)}</div>`;
@@ -180,19 +231,19 @@ export function entryRow(e, state, now = new Date()) {
     const {hours, pay} = shiftPay(shift, job);
     return `<article class="entry is-shift"><div class="time"><b>${e.continued ? '00:00' : shift.start}</b><span>${e.overnight ? '24:00' : shift.end}</span></div><div class="entry-card" style="${tint(job?.color)}">
       <span class="entry-kind">משמרת${e.continued ? ' · המשך מאתמול' : e.overnight ? ' · נגמרת למחרת ב־' + shift.end : ''} · ${hoursLabel(hours)} · כ־${money(pay)}</span>
-      <h3><a href="#job/${esc(e.jobId)}">${esc(e.title)}</a></h3>
+      <h3><a href="#job/${esc(e.jobId)}">${esc(e.title)}</a></h3>${entryExtras(e)}
       <div class="entry-actions"><button class="text-button" data-action="edit-shift" data-id="${esc(e.id)}">עריכה</button><button class="text-button muted" data-action="delete-shift" data-id="${esc(e.id)}">למחוק</button></div></div></article>`;
   }
   if (e.type === 'class') {
     const course = state.courses.find(c => c.id === e.courseId);
     return `<article class="entry is-class"><div class="time">${time}</div><div class="entry-card">
-      <span class="entry-kind">שיעור${e.location ? ` · ${esc(e.location)}` : ''}</span><h3>${course ? `<a href="#course/${esc(course.id)}">${esc(e.title)}</a>` : esc(e.title)}</h3></div></article>`;
+      <span class="entry-kind">שיעור${e.location ? ` · ${esc(e.location)}` : ''}</span><h3>${course ? `<a href="#course/${esc(course.id)}">${esc(e.title)}</a>` : esc(e.title)}</h3>${entryExtras(e)}</div></article>`;
   }
   const link = e.courseId ? state.courses.find(c => c.id === e.courseId) : null, goal = e.goalId ? state.goals.find(g => g.id === e.goalId) : null;
   const past = e.date < localDate(now) || (e.date === localDate(now) && !e.allDay && toMin(e.end) < now.getHours() * 60 + now.getMinutes());
   return `<article class="entry is-${e.kind}${e.done ? ' is-done' : ''}"><div class="time">${time}</div><div class="entry-card">
     <span class="entry-kind">${KIND[e.kind]}${link ? ` · <a href="#course/${esc(link.id)}">${esc(link.name)}</a>` : ''}${goal ? ` · <a href="#goal/${esc(goal.id)}">${esc(goal.title)}</a>` : ''}${!e.allDay ? ` · ${duration(toMin(e.end) - toMin(e.start))}` : ''}</span>
-    <h3>${esc(e.title)}</h3>
+    <h3>${esc(e.title)}</h3>${entryExtras(e)}
     <div class="entry-actions">
       ${e.kind === 'event' || e.allDay ? '' : `<button class="complete-button" data-action="toggle-done" data-id="${esc(e.id)}" aria-pressed="${e.done}">${icon('check')} ${e.done ? 'בוצע' : 'סיימתי'}</button>`}
       ${e.allDay ? '' : `<button class="text-button" data-action="move-item" data-id="${esc(e.id)}">${past && !e.done ? 'לא הספקתי, להזיז' : 'להזיז'}</button>`}
@@ -422,6 +473,15 @@ function shiftRows(list, state, today, showJob = true) {
     <span class="shift-state">${s.past ? icon('check') : ''}</span></button>`).join('');
 }
 
+// The month's goal next to the jar: how close the month's pay comes to it, and a way to set it.
+function goalLine(state, sum) {
+  const goal = state.profile.moneyGoal, goalFor = state.profile.moneyFor ? ` ל${esc(state.profile.moneyFor)}` : '';
+  if (!goal) return `<button class="text-button" data-action="money-goal">${icon('target')} יעד לחודש</button>`;
+  const percent = Math.min(100, Math.round(sum.pay / goal * 100));
+  return `<button class="jar-goal" data-action="money-goal"><span>היעד${goalFor}: <b>${money(goal)}</b></span>${bar(percent, `${percent}% מהיעד`)}
+    <small>${sum.earned >= goal ? 'הגעת ליעד!' : sum.pay >= goal ? 'עם המשמרות המתוכננות מגיעים ליעד' : `עוד ${money(goal - sum.pay)}`}</small></button>`;
+}
+
 export function work(state, ui, now = new Date()) {
   const today = localDate(now), month = ui.month || today.slice(0, 7);
   if (!state.jobs.length) return `${heading('עבודה')}
@@ -439,6 +499,7 @@ export function work(state, ui, now = new Date()) {
       <p class="jar-stat"><b>${money(sum.pay)}</b><span>${thisMonth ? 'צפוי החודש' : 'בחודש הזה'}</span></p>
       <p class="jar-stat"><b>${hoursLabel(sum.hours)}</b><span>${sum.shifts.length} משמרות</span></p>
       ${thisMonth && upcoming.length ? `<p class="jar-stat"><b>${money(sum.pay - sum.earned)}</b><span>עוד בדרך</span></p>` : ''}
+      ${thisMonth ? goalLine(state, sum) : ''}
       <button class="primary" data-action="week-shifts">${icon('week')} משמרות לשבוע הקרוב</button>
     </div>
   </section>
@@ -502,10 +563,24 @@ export function calendar(state, ui, now = new Date()) {
   ${heading('יומן', `${esc(dateLabel(start))} – ${esc(dateLabel(addDays(start, 6)))}`)}
   <div class="cal-nav"><button class="text-button" data-action="week" data-step="-7">${icon('back')} שבוע קודם</button><button class="text-button" data-action="week" data-step="0">השבוע</button><button class="text-button" data-action="week" data-step="7">שבוע הבא ${icon('arrow')}</button></div>
   ${legend}
-  <p class="field-help">השיעורים ממערכת השעות מופיעים כאן אוטומטית, לפי ימי הלימוד ותאריכי הסמסטר. <a href="#studies">עריכת מערכת השעות</a></p>
+  ${calendarHint(state)}
   ${timetableNotice(state.classes, start)}
   ${calendarGrid(state, days, today)}
   ${calendarList(state, days, today)}`;
+}
+
+// How the classes get here, as a small taped note with a pen arrow down to the week; once understood it can be put away.
+function calendarHint(state) {
+  const has = state.classes.length > 0;
+  if (has && state.profile.tips.includes('cal-auto')) return '';
+  return `<aside class="cal-hint" style="${tint('#d9a12a')}">
+    <span class="tape" aria-hidden="true"></span>
+    <h3>${has ? 'השיעורים נכנסים לבד' : 'עוד אין כאן שיעורים'}</h3>
+    <p>${has ? 'כל שיעור ממערכת השעות מופיע כאן בכל שבוע, בימים ובשעות שלו. לא צריך להוסיף אותם ביומן.' : 'מכניסים את מערכת השעות פעם אחת, וכל השיעורים יופיעו כאן בכל שבוע.'}</p>
+    <div class="cal-hint-actions"><a class="text-button" href="#studies">${icon('edit')} ${has ? 'לערוך את מערכת השעות' : 'להכניס מערכת שעות'}</a>
+      ${has ? '<button class="text-button muted" data-action="hide-tip" data-tip="cal-auto">הבנתי</button>' : ''}</div>
+    <svg class="cal-hint-arrow" viewBox="0 0 60 70" aria-hidden="true"><path pathLength="1" d="M48 4C30 12 16 30 22 62M10 50l12 13 10-15"/></svg>
+  </aside>`;
 }
 
 // Computers: the week as seven columns of cards in time order. Nothing is squeezed or cut;
@@ -539,7 +614,7 @@ function calendarList(state, days, today) {
     <section class="cal-day${date === today ? ' is-today' : ''}${entries.length ? '' : ' is-free'}">
       <h3>${esc(dayLabel(date, today))} <small>${esc(dateLabel(date))}</small>${entries.length ? '' : '<em>פנוי</em>'}</h3>
       ${entries.map(e => entryLink(e, `<span class="cal-time" dir="ltr">${e.allDay ? 'כל היום' : `<b>${e.start}</b><small>${e.end}</small>`}</span>
-        <span class="cal-what"><span class="cal-kind">${icon(TYPES[typeOf(e)][1])}${TYPES[typeOf(e)][0]}</span><b>${esc(e.title)}</b></span>`,
+        <span class="cal-what"><span class="cal-kind">${icon(TYPES[typeOf(e)][1])}${TYPES[typeOf(e)][0]}${e.overlaps ? `<em>${icon('alert')} חופף</em>` : ''}</span><b>${esc(e.title)}</b>${e.note ? `<small class="cal-note">${esc(e.note)}</small>` : ''}</span>`,
         `cal-row t-${typeOf(e)}${e.done ? ' is-done' : ''}`, tintOf(state, e) ? ` style="${tintOf(state, e)}"` : '')).join('')}
     </section>`).join('')}</div>`;
 }

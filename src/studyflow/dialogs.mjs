@@ -167,10 +167,23 @@ export function shiftForm(state, s = {}, jobId = '') {
     <small class="field-help">אם שעת הסיום מוקדמת מההתחלה, המשמרת נגמרת למחרת (משמרת לילה).</small>
     <div class="form-row"><div><label for="shift-break">הפסקה לא בתשלום</label><select id="shift-break" name="breakMinutes">${[0, 15, 30, 45, 60].map(m => `<option value="${m}" ${m === (s.breakMinutes || 0) ? 'selected' : ''}>${m ? `${m} דקות` : 'אין'}</option>`).join('')}</select></div>
     <div><label for="shift-tips">טיפים / בונוס (₪)</label><input id="shift-tips" name="tips" type="number" min="0" step="1" value="${s.tips || ''}" placeholder="לא חובה"></div></div>
+    <label for="shift-note">הערה (לא חובה)</label><input id="shift-note" name="note" maxlength="200" value="${esc(s.note || '')}" placeholder="למשל: השיעור בזום, מקשיב מהעבודה">
     ${s.id ? '' : `<label for="shift-repeat">חוזרת?</label><select id="shift-repeat" name="weeks">${[[1, 'פעם אחת'], [4, 'כל שבוע, 4 שבועות'], [8, 'כל שבוע, 8 שבועות'], [12, 'כל שבוע, 12 שבועות'], [16, 'כל שבוע, 16 שבועות']].map(([w, t]) => `<option value="${w}">${t}</option>`).join('')}</select>`}
     ${submit(s.id ? 'לשמור' : 'להוסיף ללו״ז')}
   </form>
   ${s.id ? `<button class="text-button muted" data-action="delete-shift" data-id="${esc(s.id)}">${icon('trash')} למחוק את המשמרת</button>` : ''}`;
+}
+
+// A money goal for each month: how much, and what for. The jar and the card on "today" count toward it.
+export function moneyGoalForm(profile) {
+  return `${sheetTop('יעד לחודש', 'עבודה')}
+  <form data-form="money-goal">
+    <label for="goal-amount">כמה אני רוצה להרוויח בכל חודש?</label>
+    <div class="money-input"><input id="goal-amount" name="amount" type="number" inputmode="numeric" min="0" max="1000000" step="50" value="${profile.moneyGoal || ''}" placeholder="3000" autofocus><span>₪</span></div>
+    <label for="goal-for">בשביל מה? (לא חובה)</label><input id="goal-for" name="for" maxlength="40" value="${esc(profile.moneyFor || '')}" placeholder="טיסה, רכב, שכר דירה">
+    <small class="field-help">משאירים ריק כדי לבטל את היעד.</small>
+    ${submit('לשמור')}
+  </form>`;
 }
 
 export function settingsForm(prefs) {

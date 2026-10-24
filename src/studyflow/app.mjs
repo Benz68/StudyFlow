@@ -6,7 +6,7 @@ import {loadState, saveState, validateState, migrateV1, demoState, createState} 
 import {signInScreen, waitScreen, onboardingScreen, TERMS_VERSION} from './onboarding.mjs';
 import {tourSteps, tourBubble} from './tour.mjs';
 import {shell, sheetTop, today, studies, coursePage, goals, goalPage, calendar, work, jobPage, openQuestions} from './screens.mjs';
-import {classForm, icsPreview, courseForm, topicsForm, goalForm, logForm, moveForm, settingsForm, helpContent, jobForm, shiftForm, weekShiftsForm, payCard, accountSheet, deleteAccountSheet, chooseCopySheet} from './dialogs.mjs';
+import {classForm, icsPreview, courseForm, topicsForm, goalForm, logForm, moveForm, settingsForm, helpContent, jobForm, shiftForm, weekShiftsForm, payCard, accountSheet, deleteAccountSheet, chooseCopySheet, moneyGoalForm} from './dialogs.mjs';
 import {createCloud, decide, isEmpty} from './cloud.mjs';
 import {parseTell} from './tell.mjs';
 import {propose, toItems, toShifts} from './propose.mjs';
@@ -15,6 +15,7 @@ import {repeatDates} from './work.mjs';
 import {parseICS, courseNameOf} from './ics.mjs';
 import {fileText, readSyllabus} from './syllabus.mjs';
 import {amountForSession} from './progress.mjs';
+import {markActive} from './insights.mjs';
 
 const Recognition = globalThis.SpeechRecognition || globalThis.webkitSpeechRecognition;
 let {state, notice} = loadState();
@@ -77,7 +78,7 @@ function render() {
   const tab = {course: 'studies', goal: 'goals', job: 'work'}[name] || name;
   document.querySelectorAll('[data-route]').forEach(b => { const on = b.dataset.route === tab; b.classList.toggle('active', on); on ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current'); });
   if (focusKey) main.querySelector(focusKey)?.focus({preventScroll: true});
-  if (name === 'work' || name === 'job') fillJar(`${name}:${id}:${ui.month || ''}`);
+  if (name === 'work' || name === 'job' || name === 'today') fillJar(`${name}:${id}:${ui.month || ''}`);
 }
 
 // When money arrives (a shift ended since the last look), a coin drops into the jar and the number counts up.
@@ -134,6 +135,7 @@ function toast(message, withUndo = false) {
 function mutate(change, message) {
   undoState = clone(state);
   change();
+  if (!ui.demo) state.profile.activeDays = markActive(state.profile.activeDays);
   state = validateState(state);
   if (!ui.demo) { const ok = saveState(state); notice = ok ? (notice === 'unsaved' ? '' : notice) : 'unsaved'; changedHere(); }
   render();
@@ -292,6 +294,20 @@ sheet.addEventListener('close', () => {
 });
 window.addEventListener('popstate', () => { stepping = false; if (sheet.open) sheet.close(); });
 const formError = (form, message) => { const el = form.querySelector('[data-error]'); if (el) el.textContent = message; };
+// Overlapping is allowed after a yes (a lecture on Zoom during a shift): the form says what it overlaps,
+// offers a note, and "add anyway" sends it again with the yes.
+const overlapOK = form => form.elements.overlap?.value === 'yes';
+function askOverlap(form, titles) {
+  formError(form, '');
+  if (!form.elements.overlap) form.insertAdjacentHTML('beforeend', '<input type="hidden" name="overlap" value="">');
+  const old = form.querySelector('[data-overlap]'), typed = old?.querySelector('[name=note]')?.value || '';
+  old?.remove();
+  form.querySelector('[data-error]').insertAdjacentHTML('beforebegin', `<div class="overlap-ask" data-overlap role="alert">
+    <p>${icon('alert')}<span>בזמן הזה יש כבר: <b>${titles.map(esc).join(', ')}</b>. להכניס בכל זאת?</span></p>
+    ${form.elements.note ? '' : `<input name="note" maxlength="200" value="${esc(typed)}" placeholder="הערה (לא חובה), למשל: השיעור בזום" aria-label="הערה">`}
+    <button type="button" class="primary small" data-action="confirm-overlap">${icon('check')} כן, להכניס בכל זאת</button></div>`);
+  form.querySelector('[data-overlap]').scrollIntoView({block: 'nearest'});
+}
 
 // ── "Tell me" ──
 function runTell() {
@@ -314,7 +330,14 @@ function answer(i, need, value) {
 function refreshProposals() { ui.proposals = propose(state, ui.drafts); render(); }
 function editDraft(i, field, value) {
   const d = ui.drafts[i]; if (!d) return;
-  if (field === 'title') { d.title = value.slice(0, 120); return; }
+  // Typed text changes nothing about where things go: kept on the draft and the card as typed, without redrawing.
+  if (field === 'title' || field === 'note') {
+    d[field] = value.slice(0, field === 'title' ? 120 : 200);
+    if (ui.proposals?.[i]) ui.proposals[i][field] = d[field];
+    return;
+  }
+  // A yes to an overlap was for that time; a new time is checked again.
+  if (['date', 'mode', 'start', 'end', 'part', 'minutes'].includes(field)) delete d.allowOverlap;
   if (field === 'date' && validDate(value)) { d.date = value; delete d.deadline; }
   if (field === 'minutes') { d.minutes = Number(value); if (d.fixed && d.start) d.end = toClock(Math.min(toMin(d.start) + d.minutes, 1439)); }
   if (field === 'mode') {
@@ -463,6 +486,11 @@ document.addEventListener('click', event => {
     'cancel-tell': () => { ui.tellText = ''; ui.drafts = null; ui.proposals = null; render(); },
     'drop-proposal': () => { ui.drafts.splice(Number(t.dataset.p), 1); if (!ui.drafts.length) { ui.drafts = null; ui.proposals = null; render(); } else refreshProposals(); },
     'pick-option': () => { const p = ui.proposals[Number(t.dataset.p)], o = p.options[Number(t.dataset.o)]; Object.assign(ui.drafts[Number(t.dataset.p)], {fixed: true, allDay: false, date: o.date, start: o.start, end: o.end, needs: []}); refreshProposals(); },
+    'money-goal': () => open(moneyGoalForm(state.profile)),
+    'hide-tip': () => mutate(() => { state.profile.tips = [...new Set([...state.profile.tips, t.dataset.tip])]; }),
+    'allow-overlap': () => { const d = ui.drafts[Number(t.dataset.p)]; if (d) { d.allowOverlap = true; refreshProposals(); } },
+    // "Add anyway" in a form: the form is sent again with the yes, and the note typed next to it.
+    'confirm-overlap': () => { const f = t.closest('form'); f.elements.overlap.value = 'yes'; f.requestSubmit(); },
     'commit': commitTell,
     'pick-day': () => { ui.day = t.dataset.date === localDate() ? '' : t.dataset.date; render(); },
     'toggle-done': () => toggleDone(id),
@@ -567,13 +595,15 @@ document.addEventListener('click', event => {
 document.addEventListener('input', event => {
   const el = event.target;
   if (el.id === 'tell-text') ui.tellText = el.value;
-  if (el.dataset.p !== undefined && el.dataset.field === 'title') editDraft(Number(el.dataset.p), 'title', el.value);
+  if (el.dataset.p !== undefined && ['title', 'note'].includes(el.dataset.field)) editDraft(Number(el.dataset.p), el.dataset.field, el.value);
   if (el.form?.dataset.form === 'topics' && el.name === 'text') previewSyllabus(el.form);
   if (el.form?.dataset.form === 'shift') refreshPay(el.form);
+  // A yes to an overlap was for those times; changing them asks again.
+  if (el.form?.elements.overlap && el.name !== 'note') el.form.elements.overlap.value = '';
 });
 document.addEventListener('change', async event => {
   const el = event.target;
-  if (el.dataset.p !== undefined && el.dataset.field !== 'title') return editDraft(Number(el.dataset.p), el.dataset.field, el.value);
+  if (el.dataset.p !== undefined && !['title', 'note'].includes(el.dataset.field)) return editDraft(Number(el.dataset.p), el.dataset.field, el.value);
   if (el.matches('[data-syllabus]')) {
     const form = el.closest('form'), file = el.files[0]; if (!file) return;
     try {
@@ -717,9 +747,16 @@ document.addEventListener('submit', event => {
       if (!item || !validDate(date) || toMin(start) === null) throw Error('בוחרים יום ושעה.');
       const end = toClock(Math.min(toMin(start) + toMin(item.end) - toMin(item.start), 1439));
       const hits = conflictsFor(state, {...item, date, start, end});
-      if (hits.length) throw Error(`בזמן הזה יש כבר: ${[...new Set(hits.map(h => h.title))].join(', ')}. אפשר לבחור אחד מהזמנים הפנויים למעלה.`);
+      if (hits.length && !overlapOK(form)) return askOverlap(form, [...new Set(hits.map(h => h.title))]);
+      const note = get('note');
       close();
-      mutate(() => Object.assign(item, {date, start, end, done: false}), `הוזז ל־${start}.`);
+      mutate(() => Object.assign(item, {date, start, end, done: false}, note ? {note} : {}), `הוזז ל־${start}.`);
+    }
+    if (kind === 'money-goal') {
+      const amount = Number(get('amount')) || 0;
+      if (amount < 0) throw Error('היעד צריך להיות מספר.');
+      close();
+      mutate(() => { state.profile.moneyGoal = amount; state.profile.moneyFor = amount ? get('for') : ''; }, amount ? 'היעד נשמר.' : 'היעד בוטל.');
     }
     if (kind === 'job') {
       const name = get('name'), wage = Number(get('wage'));
@@ -736,12 +773,13 @@ document.addEventListener('submit', event => {
       if (!days.length) throw Error('מסמנים לפחות יום אחד.');
       const planned = days.map(date => ({jobId, date, start: get(`start-${date}`), end: get(`end-${date}`), breakMinutes: 0, tips: 0}));
       if (planned.some(s => s.start === s.end)) throw Error('בכל משמרת, שעת הסיום צריכה להיות שונה מההתחלה.');
-      const clash = s => shiftClashes(state, s).length > 0;
-      const free = planned.filter(s => !clash(s)), busy = planned.filter(clash);
-      if (!free.length) throw Error('כל המשמרות שסימנת מתנגשות עם משהו אחר ביומן. אפשר לשנות שעות.');
+      const hits = planned.flatMap(s => shiftClashes(state, s).map(b => `${b.title} (${dateLabel(s.date)})`));
+      if (hits.length && !overlapOK(form)) return askOverlap(form, [...new Set(hits)]);
+      // The note is for the shifts that overlap something.
+      const note = get('note'), clashing = s => shiftClashes(state, s).length > 0;
       close();
-      mutate(() => state.shifts.push(...free.map(s => ({id: uid(), ...s}))),
-        `${free.length === 1 ? 'משמרת אחת נכנסה' : `${free.length} משמרות נכנסו`} ליומן${busy.length ? `. ${busy.map(s => dateLabel(s.date)).join(', ')} לא נכנסו כי יש שם כבר משהו` : ''}.`);
+      mutate(() => state.shifts.push(...planned.map(s => ({id: uid(), ...s, ...(note && clashing(s) ? {note} : {})}))),
+        `${planned.length === 1 ? 'משמרת אחת נכנסה' : `${planned.length} משמרות נכנסו`} ליומן.`);
       ui.week = ''; location.hash = 'calendar';
     }
     if (kind === 'shift') {
@@ -749,18 +787,16 @@ document.addEventListener('submit', event => {
       if (!state.jobs.some(j => j.id === jobId)) throw Error('בוחרים מקום עבודה.');
       if (!validDate(date)) throw Error('בוחרים יום.');
       if (start === end) throw Error('שעת הסיום צריכה להיות שונה משעת ההתחלה.');
-      const base = {jobId, start, end, breakMinutes: Number(get('breakMinutes')) || 0, tips: Number(get('tips')) || 0};
-      // Never on top of a class or anything else; for a weekly repeat, busy dates are skipped and reported.
-      const collide = date => [...new Set(shiftClashes(state, {...base, date}, {ignoreId: editing}).map(b => b.title))];
-
+      const base = {jobId, start, end, breakMinutes: Number(get('breakMinutes')) || 0, tips: Number(get('tips')) || 0, note: get('note')};
+      // On top of a class or anything fixed only after a yes; for a weekly repeat, every overlapping date is named.
       const dates = editing ? [date] : repeatDates(date, Number(get('weeks')) || 1);
-      const free = dates.filter(d => !collide(d).length), busy = dates.filter(d => collide(d).length);
-      if (!free.length) throw Error(`בזמן הזה יש כבר: ${collide(dates[0]).join(', ')}. אפשר לבחור שעות אחרות.`);
+      const hits = dates.flatMap(d => shiftClashes(state, {...base, date: d}, {ignoreId: editing}).map(b => dates.length > 1 ? `${b.title} (${dateLabel(d)})` : b.title));
+      if (hits.length && !overlapOK(form)) return askOverlap(form, [...new Set(hits)].slice(0, 6));
       close();
       mutate(() => {
         if (editing) Object.assign(state.shifts.find(s => s.id === editing), base, {date});
-        else state.shifts.push(...free.map(d => ({id: uid(), ...base, date: d})));
-      }, editing ? 'המשמרת עודכנה.' : `${free.length === 1 ? 'המשמרת נוספה' : `נוספו ${free.length} משמרות`} ללו״ז${busy.length ? `. ${busy.length} לא נוספו כי מתנגשות עם משהו אחר (${busy.map(d => dateLabel(d)).slice(0, 3).join(', ')})` : ''}.`);
+        else state.shifts.push(...dates.map(d => ({id: uid(), ...base, date: d})));
+      }, editing ? 'המשמרת עודכנה.' : `${dates.length === 1 ? 'המשמרת נוספה' : `נוספו ${dates.length} משמרות`} ללו״ז.`);
     }
     if (kind === 'gate-email' || kind === 'gate-code') {
       if (kind === 'gate-email') { ui.gate = {...ui.gate, email: get('email')}; if (mustAgree()) return; }

@@ -129,9 +129,17 @@ export function dayAgenda(state, date, {now = new Date()} = {}) {
   const entries = [
     ...classesOn(state, date).map(c => ({type: 'class', id: c.id, title: c.title, start: c.start, end: c.end, location: c.location, courseId: c.courseId})),
     ...shiftsOn(state, date).map(({shift, start, end}) => ({type: 'shift', id: shift.id, jobId: shift.jobId, title: jobName(state, shift.jobId),
-      start: toClock(start), end: end >= 1440 ? '24:00' : toClock(end), continued: shift.date !== date, overnight: end >= 1440})),
+      start: toClock(start), end: end >= 1440 ? '24:00' : toClock(end), continued: shift.date !== date, overnight: end >= 1440, ...(shift.note ? {note: shift.note} : {})})),
     ...state.items.filter(i => i.date === date).map(i => ({type: 'item', ...i})),
   ].sort((a, b) => (a.allDay ? -1 : b.allDay ? 1 : a.start.localeCompare(b.start)));
+  // Things the person chose to overlap (a Zoom lecture during a shift) say what they overlap with.
+  const range = e => [toMin(e.start), e.end === '24:00' ? 1440 : toMin(e.end)];
+  for (const e of entries) {
+    if (e.allDay) continue;
+    const [a, b] = range(e);
+    const others = entries.filter(x => x !== e && !x.allDay && a < range(x)[1] && b > range(x)[0]).map(x => x.title);
+    if (others.length) e.overlaps = others;
+  }
   const gaps = freeRanges(state, date, {now}).filter(r => r.end - r.start >= 45).map(r => ({type: 'free', start: toClock(r.start), end: toClock(r.end), minutes: r.end - r.start}));
   return {entries, gaps};
 }
