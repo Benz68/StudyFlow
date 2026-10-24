@@ -2,26 +2,24 @@
   "id": "./",
   "name": "StudyFlow",
   "short_name": "StudyFlow",
-  "description": "תכנון שבועי פשוט לסטודנטים. משימות, לימודים וזמן לעצמך.",
+  "description": "לימודים, עבודה ומטרות אישיות במקום אחד. מספרים מה יש, והשבוע מסתדר בזמן הפנוי. בלי בינה מלאכותית.",
   "lang": "he",
   "dir": "rtl",
-  "start_url": "./",
+  "start_url": "./#today",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#F5F7FA",
-  "theme_color": "#087E83",
+  "orientation": "portrait",
+  "background_color": "#F3EEE3",
+  "theme_color": "#F3EEE3",
+  "categories": ["education", "productivity"],
   "icons": [
-    {
-      "src": "src/studyflow/brand/app-icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "src/studyflow/brand/app-icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
+    {"src": "src/studyflow/brand/app-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "src/studyflow/brand/app-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "src/studyflow/brand/app-icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ],
+  "shortcuts": [
+    {"name": "היום", "url": "./#today"},
+    {"name": "יומן", "url": "./#calendar"},
+    {"name": "עבודה", "url": "./#work"}
   ]
 }
