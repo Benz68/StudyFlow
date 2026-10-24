@@ -44,6 +44,8 @@ test('sign in with a code, keep the session, renew it when it runs out', async (
   clock += 2 * 3600 * 1000;
   await cloud.pull();
   assert.deepEqual(calls.slice(-2).map(c => c[2]), ['', 'Bearer a2'], 'an expired sign-in renews itself first');
+  assert.equal(await cloud.peek(), null);
+  assert.ok(calls.at(-1)[0].includes('select=edited_at&'), 'checking for changes asks only for the time, not the whole planner');
 });
 
 test('errors a person can act on are told apart', async () => {
