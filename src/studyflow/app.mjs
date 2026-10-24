@@ -238,8 +238,11 @@ async function syncNow() {
   try {
     if (cloud.syncInfo().userId && cloud.syncInfo().userId !== cloud.user.id) wipeDevice();
     cloud.setSyncInfo({userId: cloud.user.id});
-    const info = cloud.syncInfo(), remote = await cloud.pull(), editedAt = info.editedAt || 0;
+    const info = cloud.syncInfo(), editedAt = info.editedAt || 0;
+    let remote = await cloud.peek();
     const step = decide({editedAt, syncedAt: info.syncedAt || 0, empty: isEmpty(state)}, remote);
+    // The planner itself is fetched only when it is needed: to take it, to choose, or to keep it as a backup.
+    if (['pull', 'pull-keep-other', 'ask', 'push-keep-other'].includes(step)) remote = await cloud.pull();
     if (step === 'ask') { setSync(''); ui.firstSync = true; render(); ui.pending = {remote}; open(chooseCopySheet(new Date(remote.edited_at).toLocaleDateString('he-IL'))); return; }
     if (step.startsWith('pull')) { if (step === 'pull-keep-other') keepBackup(state); useRemote(remote); }
     if (step.startsWith('push')) {

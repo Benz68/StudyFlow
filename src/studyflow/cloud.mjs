@@ -100,15 +100,19 @@ export function createCloud({url = SUPABASE_URL, key = SUPABASE_KEY, storage = g
       await call('/rest/v1/rpc/delete_my_account', {method: 'POST', auth: true, body: {}});
       forget();
     },
+    // Only when the account's copy last changed: a few bytes, so opening the app stays cheap with many people.
+    async peek() {
+      const rows = await call(`/rest/v1/user_state?select=edited_at&user_id=eq.${encodeURIComponent(session.user.id)}`, {auth: true});
+      return rows?.[0] || null;
+    },
     async pull() {
       const rows = await call(`/rest/v1/user_state?select=state,edited_at&user_id=eq.${encodeURIComponent(session.user.id)}`, {auth: true});
       return rows?.[0] || null;
     },
     async push(state, editedAt) {
-      const rows = await call('/rest/v1/user_state?on_conflict=user_id', {method: 'POST', auth: true,
-        headers: {Prefer: 'resolution=merge-duplicates,return=representation'},
+      await call('/rest/v1/user_state?on_conflict=user_id', {method: 'POST', auth: true,
+        headers: {Prefer: 'resolution=merge-duplicates,return=minimal'},
         body: {user_id: session.user.id, state, edited_at: new Date(editedAt).toISOString()}});
-      return rows?.[0] || null;
     },
     // Per device: when the planner was last changed here, and which version of the account it last matched.
     syncInfo: () => read(storage, SYNC_KEY) || {},
