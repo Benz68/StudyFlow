@@ -3,7 +3,7 @@ import {semesterFields, updateSemester} from './timetable.mjs';
 // and every change made through mutate() so it is validated, saved and can be undone.
 import {esc, uid, localDate, addDays, toMin, toClock, weekStart, validDate, dayLabel, dateLabel, PALETTE, icon} from './util.mjs';
 import {loadState, saveState, validateState, migrateV1, demoState, createState} from './store.mjs';
-import {signInScreen, waitScreen, onboardingScreen, TERMS_VERSION} from './onboarding.mjs';
+import {signInScreen, waitScreen, onboardingScreen, termsUpdateScreen, TERMS_VERSION} from './onboarding.mjs';
 import {tourSteps, tourBubble} from './tour.mjs';
 import {shell, sheetTop, today, studies, coursePage, goals, goalPage, calendar, work, jobPage, openQuestions} from './screens.mjs';
 import {classForm, icsPreview, courseForm, topicsForm, goalForm, logForm, moveForm, settingsForm, helpContent, jobForm, shiftForm, weekShiftsForm, payCard, accountSheet, deleteAccountSheet, chooseCopySheet, moneyGoalForm} from './dialogs.mjs';
@@ -44,6 +44,8 @@ function gateScreen() {
     return ui.loadError ? waitScreen('אין חיבור לאינטרנט. בפעם הראשונה צריך חיבור כדי לטעון את המידע שלך.', {retry: true}) : waitScreen('טוען את המידע שלך…');
   }
   if (!ui.demo && !state.profile.onboarded) return onboardingScreen(ui.obStep || 'name', state);
+  // Once the account is loaded (it may hold a yes given on another device), a changed version of the terms is asked for again.
+  if (!ui.demo && ui.firstSync && state.profile.terms !== TERMS_VERSION && !agreedHere()) return termsUpdateScreen(ui.gate);
   return '';
 }
 
@@ -487,6 +489,7 @@ document.addEventListener('click', event => {
     'drop-proposal': () => { ui.drafts.splice(Number(t.dataset.p), 1); if (!ui.drafts.length) { ui.drafts = null; ui.proposals = null; render(); } else refreshProposals(); },
     'pick-option': () => { const p = ui.proposals[Number(t.dataset.p)], o = p.options[Number(t.dataset.o)]; Object.assign(ui.drafts[Number(t.dataset.p)], {fixed: true, allDay: false, date: o.date, start: o.start, end: o.end, needs: []}); refreshProposals(); },
     'money-goal': () => open(moneyGoalForm(state.profile)),
+    'terms-agree': () => { if (mustAgree()) return; ui.gate = {}; render(); },
     'hide-tip': () => mutate(() => { state.profile.tips = [...new Set([...state.profile.tips, t.dataset.tip])]; }),
     'allow-overlap': () => { const d = ui.drafts[Number(t.dataset.p)]; if (d) { d.allowOverlap = true; refreshProposals(); } },
     // "Add anyway" in a form: the form is sent again with the yes, and the note typed next to it.
