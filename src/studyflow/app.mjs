@@ -118,18 +118,24 @@ function mutate(change, message) {
 // ── Dialogs ──
 // Every form opens as a full page of its own, never a box over part of the screen.
 function open(html) {
-  if (!sheet.open) returnFocus = document.activeElement;
+  // On a phone the back button should close the form, not leave the screen: the form gets its own history step.
+  if (!sheet.open) { returnFocus = document.activeElement; if (!history.state?.sheet) history.pushState({sheet: true}, ''); }
   sheet.innerHTML = `<div class="sheet-page">${html}</div>`;
   sheet.scrollTop = 0;
   if (!sheet.open) sheet.showModal();
   document.body.classList.add('dialog-open');
   (sheet.querySelector('[autofocus]') || sheet.querySelector('#dialog-title'))?.focus?.();
 }
-function close() { if (sheet.open) sheet.close(); }
+function close() { if (sheet.open) { sheet.close(); dropSheetStep(); } }
+// Closed by a button or Escape: drop the form's history step, once, unless the action already moved to another screen.
+let stepping = false;
+function dropSheetStep() { setTimeout(() => { if (!sheet.open && !stepping && history.state?.sheet) { stepping = true; history.back(); } }, 0); }
 sheet.addEventListener('close', () => {
   document.body.classList.remove('dialog-open'); ui.pending = null;
   if (returnFocus?.isConnected) returnFocus.focus({preventScroll: true});
+  dropSheetStep();
 });
+window.addEventListener('popstate', () => { stepping = false; if (sheet.open) sheet.close(); });
 const formError = (form, message) => { const el = form.querySelector('[data-error]'); if (el) el.textContent = message; };
 
 // ── "Tell me" ──
@@ -193,22 +199,55 @@ function commitTell() {
 }
 
 // ── Microphone (the browser's speech recognition; the app itself sends nothing) ──
+// Phones differ from computers: Android stops at every short pause and may resend a growing sentence,
+// and on an iPhone it works only inside Safari, not from the home screen. So each pause starts a new
+// listening run until the person taps stop (or a minute passes), and repeated text is kept once.
+const isAndroid = /Android/i.test(navigator.userAgent), isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+const MIC_ERRORS = {
+  'not-allowed': 'צריך לאשר גישה למיקרופון. אפשר גם ללחוץ על המיקרופון שבמקלדת ולהכתיב.',
+  'service-not-allowed': isIOS ? 'באייפון הזיהוי הקולי עובד רק ב-Safari. אפשר ללחוץ על המיקרופון שבמקלדת ולהכתיב.' : 'צריך לאשר גישה למיקרופון. אפשר גם ללחוץ על המיקרופון שבמקלדת ולהכתיב.',
+  'audio-capture': 'לא מצאתי מיקרופון במכשיר.',
+  'no-speech': 'לא שמעתי כלום. אפשר לנסות שוב, קרוב יותר לטלפון.',
+  network: 'הזיהוי הקולי צריך חיבור לאינטרנט.',
+};
+let micWanted = false;
 function toggleMic() {
-  if (recognition) { recognition.stop(); return; }
-  const field = main.querySelector('#tell-text');
-  const before = field?.value.trim() || '';
-  recognition = new Recognition();
-  recognition.lang = 'he-IL'; recognition.continuous = true; recognition.interimResults = true;
-  recognition.onresult = event => {
-    let heard = ''; for (const r of event.results) heard += r[0].transcript;
-    ui.tellText = [before, heard.trim()].filter(Boolean).join(' ');
-    const f = main.querySelector('#tell-text'); if (f) f.value = ui.tellText;
+  if (recognition) { micWanted = false; recognition.stop(); return; }
+  let kept = main.querySelector('#tell-text')?.value.trim() || '', finals = [], heard = false;
+  const startedAt = Date.now(), join = (...parts) => parts.map(p => p.trim()).filter(Boolean).join(' ');
+  const show = interim => { ui.tellText = join(kept, ...finals, interim); const f = main.querySelector('#tell-text'); if (f) f.value = ui.tellText; };
+  const run = () => {
+    const r = new Recognition();
+    r.lang = 'he-IL'; r.continuous = !isAndroid; r.interimResults = true; r.maxAlternatives = 1;
+    r.onresult = event => {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const text = event.results[i][0].transcript.trim(), last = finals.at(-1);
+        if (!event.results[i].isFinal) interim = text;
+        else if (last && text.startsWith(last)) finals[finals.length - 1] = text;
+        else if (text && text !== last) finals.push(text);
+      }
+      if (interim || finals.length) heard = true;
+      show(interim);
+    };
+    r.onerror = event => {
+      if (event.error === 'aborted') return;
+      // Silence after speaking just ends the listening; silence from the start, or any real error, says why.
+      if (event.error !== 'no-speech' || !heard) ui.tellError = MIC_ERRORS[event.error] || '';
+      micWanted = false;
+
+    };
+    r.onend = () => {
+      kept = join(kept, ...finals); finals = []; show('');
+      if (micWanted && Date.now() - startedAt < 60_000) { try { recognition = run(); return; } catch { /* stop below */ } }
+      recognition = null; micWanted = false; ui.listening = false; render();
+    };
+    r.start();
+    return r;
   };
-  recognition.onerror = event => {
-    ui.tellError = {'not-allowed': 'צריך לאשר גישה למיקרופון בדפדפן.', 'service-not-allowed': 'צריך לאשר גישה למיקרופון בדפדפן.', 'no-speech': 'לא שמעתי כלום. אפשר לנסות שוב.', network: 'הזיהוי הקולי צריך חיבור לאינטרנט.'}[event.error] || '';
-  };
-  recognition.onend = () => { recognition = null; ui.listening = false; render(); };
-  recognition.start(); ui.listening = true; render();
+  ui.tellError = ''; micWanted = true;
+  try { recognition = run(); } catch { recognition = null; micWanted = false; ui.tellError = 'לא הצלחתי להפעיל את המיקרופון. אפשר ללחוץ על המיקרופון שבמקלדת ולהכתיב.'; return render(); }
+  ui.listening = true; render();
 }
 
 // ── Items in the schedule ──

@@ -395,6 +395,8 @@ dialog#sheet::backdrop{background:var(--bg)}
 .board-free{text-align:center;font-size:11.5px;color:var(--faint);padding:2px 0;border-top:1.5px dashed var(--line);border-bottom:1.5px dashed var(--line);margin:2px 8px}
 .board-empty{text-align:center;font-size:13px;color:var(--faint);padding:8px 0}
 @media(max-width:1100px){.board{gap:6px}.board-day{padding:8px 5px}.board-card{padding:7px 7px}}
+/* Phones get the day-by-day list; the board is for wide screens only (this must come after .board) */
+@media(max-width:760px){.cal-grid.board{display:none}}
 
 /* "How much did it come to?": a shift's pay, line by line, then the month in the workplace's color */
 .pay-card{--c:#5b4ea8;display:grid;gap:14px;margin:4px 0 18px;padding:20px 20px 18px;border-radius:22px;background:var(--card);box-shadow:0 0 0 1px var(--line),0 14px 28px -22px #00000066}
@@ -433,3 +435,44 @@ html{-webkit-text-size-adjust:100%;overscroll-behavior-y:none}
 .install-card img{border-radius:12px;flex:none}
 .install-card>div{display:flex;flex-direction:column;align-items:flex-start;gap:6px;flex:1;min-width:0;font-size:14px;line-height:1.5;color:var(--muted)}
 .install-card>div>b{font-size:15px;color:var(--ink)}
+/* ── Phones: one column, less chrome, everything within thumb reach ── */
+@media(max-width:650px){
+  .page-heading{margin:18px 0 14px}
+  .page-heading h1{font-size:42px}
+  .section-heading{flex-wrap:wrap;align-items:flex-end;margin:22px 0 10px}
+  .section-heading>div:first-child{flex:1 1 auto}
+  .section-heading .section-actions{flex-wrap:wrap;justify-content:flex-start;gap:4px 14px}
+  .section-heading h2{font-size:30px;white-space:nowrap}
+  .tell-foot .field-help{font-size:11.5px;line-height:1.4}
+  /* Timetable: the class days in one column; free days fold away */
+  .timetable{grid-template-columns:1fr;gap:8px}
+  .tt-day:has(.tt-free){display:none}
+  .tt-day{display:grid;grid-template-columns:70px 1fr;align-items:start;gap:6px 10px;border-radius:14px}
+  .tt-day h3{font-size:26px;line-height:1.1;margin:0}
+  .tt-day .tt-class{grid-column:2}
+  /* Money jar beside its numbers instead of above them */
+  .jar-card{grid-template-columns:118px 1fr;gap:10px 16px;padding:14px;border-radius:18px}
+  .jar-card .jar svg{max-width:118px}
+  .jar-card .jar-stat{display:flex;flex-direction:column;align-items:flex-start;gap:0;padding:6px 0}
+  .jar-card .jar-stat b{font-size:20px;white-space:nowrap}
+  .jar-card .jar-stat span{font-size:12px}
+  .jar-card .jar-amount b{font-size:18px}
+  .jar-card .jar-amount span{font-size:9.5px}
+  .jar-side .primary,.jar-side .text-button{grid-column:1/-1}
+  .jar-card>.jar-side{display:contents}
+  .jar-card .jar-stat{grid-column:2}
+  .jar-card .jar{grid-row:span 3}
+  /* Goal page: a smaller ring, the actions in full width */
+  .goal-hero{padding:16px;gap:12px;border-radius:4px 4px 18px 4px}
+  .ring-big{width:118px;height:118px}.ring-big b{font-size:36px}
+  .goal-headline{font-size:28px}
+  .week-dots span{width:32px;height:32px;font-size:12px}
+  .goal-actions .primary{flex:1 1 100%}
+  .goal-stats{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+  .goal-stats b{font-size:17px}.goal-stats span{font-size:11.5px}
+  /* Calendar: the explanation line stays short */
+  .cal-nav+.cal-legend+.field-help,.cal-legend+.field-help{font-size:12.5px;line-height:1.5;margin:4px 0 10px}
+  .cal-day{border-radius:14px}
+  /* Notes don't tilt on a small screen */
+  .big-card.note,.card-grid>.note:nth-child(n){transform:none}
+}
