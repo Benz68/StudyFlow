@@ -3,7 +3,8 @@ import {semesterFields, updateSemester} from './timetable.mjs';
 // and every change made through mutate() so it is validated, saved and can be undone.
 import {esc, uid, localDate, addDays, toMin, toClock, weekStart, validDate, dayLabel, dateLabel, PALETTE, icon} from './util.mjs';
 import {loadState, saveState, validateState, migrateV1, demoState, createState} from './store.mjs';
-import {signInScreen, waitScreen, onboardingScreen, GOAL_PRESETS, tipCard, coachCard} from './onboarding.mjs';
+import {signInScreen, waitScreen, onboardingScreen, TERMS_VERSION} from './onboarding.mjs';
+import {tourSteps, tourBubble} from './tour.mjs';
 import {shell, sheetTop, today, studies, coursePage, goals, goalPage, calendar, work, jobPage, openQuestions} from './screens.mjs';
 import {classForm, icsPreview, courseForm, topicsForm, goalForm, logForm, moveForm, settingsForm, helpContent, jobForm, shiftForm, weekShiftsForm, payCard, accountSheet, deleteAccountSheet, chooseCopySheet} from './dialogs.mjs';
 import {createCloud, decide, isEmpty} from './cloud.mjs';
@@ -37,15 +38,26 @@ const route = () => { const [name, id] = location.hash.slice(1).split('/'); retu
 // What covers the app right now: signing in, loading the account on a new device, or the first-time questions.
 function gateScreen() {
   if (ui.signingIn) return waitScreen('מתחבר…');
-  if (!cloud.user) return signInScreen(ui.gate || {});
+  if (!cloud.user) return signInScreen({...ui.gate, agreed: agreedHere()});
   if (!ui.firstSync && isEmpty(state) && !cloud.syncInfo().syncedAt) {
     return ui.loadError ? waitScreen('אין חיבור לאינטרנט. בפעם הראשונה צריך חיבור כדי לטעון את המידע שלך.', {retry: true}) : waitScreen('טוען את המידע שלך…');
   }
-  if (!ui.demo && !state.profile.onboarded) return onboardingScreen(ui.obStep || 'name', state, {added: ui.obAdded || {}});
+  if (!ui.demo && !state.profile.onboarded) return onboardingScreen(ui.obStep || 'name', state);
   return '';
 }
 
+// Agreeing to the terms on the way in is kept on the device until there is an account to keep it in.
+const agreedHere = () => { try { return localStorage.getItem('studyflow.terms') === TERMS_VERSION; } catch { return false; } };
+function mustAgree() {
+  const box = gate.querySelector('#gate-agree');
+  if (box?.checked) { try { localStorage.setItem('studyflow.terms', TERMS_VERSION); } catch { /* asked again next time */ } return false; }
+  ui.gate = {...ui.gate, error: 'כדי להמשיך צריך לאשר את תנאי השימוש ואת מדיניות הפרטיות.'}; render();
+  gate.querySelector('.gate-consent')?.classList.add('is-missing');
+  return true;
+}
+
 function render() {
+  if (cloud.user && !ui.demo && state.profile.terms !== TERMS_VERSION && agreedHere()) { state.profile.terms = TERMS_VERSION; saveState(state); changedHere(); }
   const cover = gateScreen();
   if (cover) {
     const focused = document.activeElement?.closest?.('#gate') ? document.activeElement.id : '';
@@ -59,15 +71,9 @@ function render() {
   const screens = {today: () => today(state, ui), studies: () => studies(state), course: () => coursePage(state, id, ui),
     goals: () => goals(state), goal: () => goalPage(state, id, ui), calendar: () => calendar(state, ui),
     work: () => work(state, ui), job: () => jobPage(state, id, ui)};
-  main.innerHTML = noticeBanner() + (name === 'today' ? installBanner() : '') + (screens[name] || screens.today)();
-  // The first try of "tell me" right after the questions, and one tip the first time each area opens.
-  if (ui.coach && (name === 'today' || !screens[name])) {
-    const anchor = ui.proposals ? main.querySelector('.review-card') : main.querySelector('.tell');
-    anchor?.insertAdjacentHTML('beforebegin', coachCard(ui.proposals ? 'review' : 'tell'));
-  }
-  if (!ui.demo && ['studies', 'work', 'goals', 'calendar'].includes(name) && !state.profile.tips.includes(name)) {
-    main.querySelector('.page-heading')?.insertAdjacentHTML('afterend', tipCard(name));
-  }
+  main.innerHTML = noticeBanner() + (screens[name] || screens.today)();
+  placeTour();
+
   const tab = {course: 'studies', goal: 'goals', job: 'work'}[name] || name;
   document.querySelectorAll('[data-route]').forEach(b => { const on = b.dataset.route === tab; b.classList.toggle('active', on); on ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current'); });
   if (focusKey) main.querySelector(focusKey)?.focus({preventScroll: true});
@@ -105,22 +111,6 @@ const lastTimes = jobId => {
   const last = [...state.shifts].filter(s => s.jobId === jobId).sort((a, b) => b.date.localeCompare(a.date))[0];
   return last ? {start: last.start, end: last.end} : {start: '16:00', end: '22:00'};
 };
-
-// On a phone browser, before it is installed, the today screen offers once to put the app on the home screen.
-let installEvent = null;
-window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); installEvent = event; if (route().name === 'today') render(); });
-window.addEventListener('appinstalled', () => { installEvent = null; render(); });
-const installed = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-const onPhone = () => matchMedia('(max-width: 760px)').matches && matchMedia('(pointer: coarse)').matches;
-function installBanner() {
-  let hidden = false;
-  try { hidden = localStorage.getItem('studyflow.install.hidden') === '1'; } catch { /* show it */ }
-  if (hidden || installed() || !onPhone()) return '';
-  const how = installEvent ? '<button class="primary small" data-action="install">להתקין</button>'
-    : /iPhone|iPad|iPod/.test(navigator.userAgent) ? '<span>ב-Safari לוחצים <b>שיתוף</b> ואז <b>"הוספה למסך הבית"</b>.</span>'
-    : '<span>בתפריט ⋮ של הדפדפן: <b>"התקנת אפליקציה"</b> או <b>"הוספה למסך הבית"</b>.</span>';
-  return `<section class="install-card"><img src="src/studyflow/brand/app-icon-192.png" alt="" width="52" height="52"><div><b>StudyFlow כאפליקציה בטלפון</b>${how}</div><button class="icon-button" data-action="hide-install" aria-label="לא עכשיו">${icon('close')}</button></section>`;
-}
 
 function noticeBanner() {
   const text = {
@@ -163,8 +153,70 @@ function setSync(status, at = ui.sync.at) {
   ui.sync = {status, at};
   if (sheet.open && sheet.querySelector('.sync-line')) sheet.querySelector('.sheet-page').innerHTML = accountSheet(cloud.user, {sync: ui.sync});
 }
+// ── The guided tour ──
+// Right after the first-time questions it runs on the sample planner, so each screen has something to show;
+// one real part of the screen at a time is lit, the rest dimmed. Ending it returns to the person's own planner.
+const tourLayer = Object.assign(document.createElement('div'), {id: 'tour', hidden: true});
+document.body.append(tourLayer);
+function finishOnboarding() {
+  ui.obStep = '';
+  mutate(() => { state.profile.onboarded = true; });
+  startTour();
+}
+function startTour() {
+  const areas = (ui.demo ? saved : state)?.profile?.areas || [];
+  if (!ui.demo) { saved = clone(state); state = demoState(); ui.demo = true; ui.tourDemo = true; }
+  ui.tour = {i: 0, steps: tourSteps(areas)};
+  showTourStep();
+}
+function showTourStep() {
+  const step = ui.tour.steps[ui.tour.i];
+  if (route().name !== step.route) location.hash = step.route; else render();
+}
+function endTour() {
+  ui.tour = null; tourLayer.hidden = true; tourLayer.innerHTML = '';
+  if (ui.tourDemo) { state = saved || state; saved = null; ui.demo = false; ui.tourDemo = false; undoState = null; }
+  if (route().name !== 'today') location.hash = 'today'; else render();
+  window.scrollTo(0, 0);
+  toast('זהו! עכשיו תורך. מתחילים מ"ספר לי" או מהגדרת מערכת השעות.');
+}
+// Light the step's part of the screen and put the explanation beside it: the explanation sits at the bottom
+// (or the top, for something fixed low on the screen), and the lit part is scrolled into the space left above it.
+function placeTour() {
+  if (!ui.tour) { if (!tourLayer.hidden) { tourLayer.hidden = true; tourLayer.innerHTML = ''; } return; }
+  const step = ui.tour.steps[ui.tour.i], n = ui.tour.i, gap = 14, pad = 8;
+  requestAnimationFrame(() => {
+    if (!ui.tour || ui.tour.i !== n) return;
+    tourLayer.innerHTML = `<div class="tour-hole" style="top:50%;left:50%;width:0;height:0"></div>${tourBubble(step, n, ui.tour.steps.length)}`;
+    tourLayer.hidden = false;
+    const bubble = tourLayer.querySelector('.tour-bubble'), hole = tourLayer.querySelector('.tour-hole'), h = bubble.offsetHeight;
+    const room = innerHeight - h - gap * 3;
+    const target = [...document.querySelectorAll(step.target)].find(el => el.getClientRects().length);
+    if (target) {
+      const r0 = target.getBoundingClientRect(), tall = r0.height + 2 * pad > room;
+      window.scrollBy(0, r0.top - (tall ? gap + pad : gap + pad + (room - r0.height - 2 * pad) / 2));
+    }
+    const r = target?.getBoundingClientRect();
+    const below = !r || r.top + r.height / 2 < innerHeight / 2;
+    const top = below ? innerHeight - h - gap : gap;
+    bubble.style.top = `${Math.max(8, top)}px`;
+    if (r) {
+      const t = below ? Math.max(4, r.top - pad) : Math.max(top + h + gap, r.top - pad);
+      const b = below ? Math.min(r.bottom + pad, top - gap) : Math.min(innerHeight - 4, r.bottom + pad);
+      Object.assign(hole.style, {top: `${t}px`, left: `${r.left - pad}px`, width: `${r.width + 2 * pad}px`, height: `${Math.max(0, b - t)}px`});
+    }
+    bubble.querySelector('[autofocus]')?.focus({preventScroll: true});
+  });
+}window.addEventListener('resize', () => placeTour());
+document.addEventListener('keydown', e => {
+  if (!ui.tour) return;
+  if (e.key === 'Escape') endTour();
+  if (e.key === 'ArrowLeft') tourLayer.querySelector('[data-action="tour-next"]')?.click();
+  if (e.key === 'ArrowRight') tourLayer.querySelector('[data-action="tour-prev"]')?.click();
+});
+
 function wipeDevice() {
-  state = createState(); saveState(state); undoState = null; ui.firstSync = false; ui.coach = null; ui.obStep = ''; ui.obAdded = {};
+  state = createState(); saveState(state); undoState = null; ui.firstSync = false; ui.obStep = '';
   try { localStorage.removeItem('studyflow.cloud.backup'); } catch { /* nothing kept */ }
 }
 async function signOutNow() {
@@ -293,9 +345,7 @@ function commitTell() {
   }, `${all.length === 1 ? 'נכנס' : `${all.length} פריטים נכנסו`} ללו״ז${all.every(i => i.date === all[0].date) ? ` של ${dayLabel(all[0].date)}` : ''}.`);
   // Show the day the items went to.
   ui.day = all.map(i => i.date).sort()[0];
-  ui.tellText = ''; ui.drafts = null; ui.proposals = null;
-  if (ui.coach) { ui.coach = null; setTimeout(() => toast('מעולה! זה עכשיו ביומן. בכל אזור תקבל טיפ קצר בפעם הראשונה.'), 1800); }
-  render();
+  ui.tellText = ''; ui.drafts = null; ui.proposals = null; render();
 }
 
 // ── Microphone (the browser's speech recognition; the app itself sends nothing) ──
@@ -416,13 +466,11 @@ document.addEventListener('click', event => {
     'move-to': () => { const o = ui.pending.options[Number(t.dataset.n)], itemId = ui.pending.move; close(); mutate(() => Object.assign(state.items.find(i => i.id === itemId), {date: o.date, start: o.start, end: o.end, done: false}), `הוזז ל־${o.start}.`); },
     'demo': () => { saved = clone(state); state = demoState(); ui.demo = true; render(); },
     'exit-demo': () => { state = saved || state; saved = null; ui.demo = false; undoState = null; render(); },
-    'install': async () => { const e = installEvent; if (!e) return; e.prompt(); await e.userChoice.catch(() => null); installEvent = null; render(); },
-    'hide-install': () => { try { localStorage.setItem('studyflow.install.hidden', '1'); } catch { /* fine */ } render(); },
     // Account
     'account': () => open(accountSheet(cloud.user, {codeFor: cloud.user ? '' : ui.loginEmail || '', sync: ui.sync})),
     'account-other': () => { ui.loginEmail = ''; open(accountSheet(null)); },
     'resend-code': () => cloud.sendCode(ui.loginEmail).then(() => toast('שלחנו מייל חדש.'), e => toast(cloudError(e))),
-    'google': () => { location.href = cloud.googleUrl(`${location.origin}${location.pathname}`); },
+    'google': () => { if (mustAgree()) return; location.href = cloud.googleUrl(`${location.origin}${location.pathname}`); },
     'sync-now': () => syncNow(),
     'sign-out': async () => {
       await syncNow();
@@ -439,19 +487,12 @@ document.addEventListener('click', event => {
     'gate-other': () => { ui.gate = {}; render(); },
     'gate-resend': () => cloud.sendCode(ui.gate.email).then(() => toast('שלחנו מייל חדש.'), e => { ui.gate = {...ui.gate, error: cloudError(e)}; render(); }),
     'gate-retry': () => { ui.loadError = false; render(); syncNow(); },
-    'ob-next': () => { ui.obStep = {name: 'areas', areas: 'day', day: 'setup'}[t.dataset.step] || 'setup'; render(); },
-    'ob-goal': () => {
-      const g = GOAL_PRESETS[t.dataset.preset]; if (!g) return;
-      ui.obAdded = {...ui.obAdded, [t.dataset.preset]: true};
-      mutate(() => state.goals.push({id: uid(), ...g, period: 'week', log: []}));
-    },
-    'ob-finish': () => {
-      ui.obStep = ''; ui.coach = 'tell'; ui.tellText = 'מחר ללמוד שעתיים בבוקר, ובערב אימון שעה';
-      location.hash = 'today';
-      mutate(() => { state.profile.onboarded = true; });
-    },
-    'coach-done': () => { ui.coach = null; render(); },
-    'tip-seen': () => mutate(() => { state.profile.tips.push(t.dataset.tip); }),
+    'ob-next': () => { if (t.dataset.step === 'day') return finishOnboarding(); ui.obStep = {name: 'areas', areas: 'day'}[t.dataset.step]; render(); },
+    // The guided tour
+    'tour-start': () => { close(); startTour(); },
+    'tour-next': () => { if (ui.tour.i >= ui.tour.steps.length - 1) return endTour(); ui.tour.i++; showTourStep(); },
+    'tour-prev': () => { ui.tour.i = Math.max(0, ui.tour.i - 1); showTourStep(); },
+    'tour-end': () => endTour(),
     'help': () => open(helpContent()),
     'settings': () => open(settingsForm(state.prefs)),
     'export': () => {
@@ -717,6 +758,7 @@ document.addEventListener('submit', event => {
       }, editing ? 'המשמרת עודכנה.' : `${free.length === 1 ? 'המשמרת נוספה' : `נוספו ${free.length} משמרות`} ללו״ז${busy.length ? `. ${busy.length} לא נוספו כי מתנגשות עם משהו אחר (${busy.map(d => dateLabel(d)).slice(0, 3).join(', ')})` : ''}.`);
     }
     if (kind === 'gate-email' || kind === 'gate-code') {
+      if (kind === 'gate-email') { ui.gate = {...ui.gate, email: get('email')}; if (mustAgree()) return; }
       const button = form.querySelector('[type=submit]'); button.disabled = true; formError(form, '');
       const failed = e => { button.disabled = false; formError(form, cloudError(e)); };
       if (kind === 'gate-email') {
@@ -732,12 +774,8 @@ document.addEventListener('submit', event => {
     if (kind === 'ob-day') {
       const dayStart = get('dayStart'), dayEnd = get('dayEnd');
       if (toMin(dayEnd) <= toMin(dayStart)) throw Error('סוף היום צריך להיות אחרי ההתחלה.');
-      ui.obStep = 'setup'; mutate(() => { state.prefs = {...state.prefs, dayStart, dayEnd}; }); return;
-    }
-    if (kind === 'ob-job') {
-      const name = get('name'), wage = Number(get('wage'));
-      if (!name || !Number.isFinite(wage) || wage < 0) throw Error('צריך שם עסק ושכר לשעה.');
-      mutate(() => state.jobs.push({id: uid(), name, wage, overtime: true, color: nextJobColor()})); return;
+      state.prefs = {...state.prefs, dayStart, dayEnd};
+      finishOnboarding(); return;
     }
     if (kind === 'send-code' || kind === 'verify-code') {
       const button = form.querySelector('[type=submit]'); button.disabled = true; formError(form, '');
