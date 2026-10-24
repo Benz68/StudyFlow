@@ -1,7 +1,7 @@
 import {semesterFields, updateSemester} from './timetable.mjs';
 // The app: one state object saved in this browser, screens chosen by the address (#today, #course/ID…),
 // and every change made through mutate() so it is validated, saved and can be undone.
-import {esc, uid, localDate, addDays, toMin, toClock, weekStart, validDate, dayLabel, dateLabel, PALETTE} from './util.mjs';
+import {esc, uid, localDate, addDays, toMin, toClock, weekStart, validDate, dayLabel, dateLabel, PALETTE, icon} from './util.mjs';
 import {loadState, saveState, validateState, migrateV1, demoState} from './store.mjs';
 import {shell, sheetTop, today, studies, coursePage, goals, goalPage, calendar, work, jobPage, openQuestions} from './screens.mjs';
 import {classForm, icsPreview, courseForm, topicsForm, goalForm, logForm, moveForm, settingsForm, helpContent, jobForm, shiftForm, weekShiftsForm, payCard} from './dialogs.mjs';
@@ -32,7 +32,7 @@ function render() {
   const screens = {today: () => today(state, ui), studies: () => studies(state), course: () => coursePage(state, id, ui),
     goals: () => goals(state), goal: () => goalPage(state, id, ui), calendar: () => calendar(state, ui),
     work: () => work(state, ui), job: () => jobPage(state, id, ui)};
-  main.innerHTML = noticeBanner() + (screens[name] || screens.today)();
+  main.innerHTML = noticeBanner() + (name === 'today' ? installBanner() : '') + (screens[name] || screens.today)();
   const tab = {course: 'studies', goal: 'goals', job: 'work'}[name] || name;
   document.querySelectorAll('[data-route]').forEach(b => { const on = b.dataset.route === tab; b.classList.toggle('active', on); on ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current'); });
   if (focusKey) main.querySelector(focusKey)?.focus({preventScroll: true});
@@ -70,6 +70,22 @@ const lastTimes = jobId => {
   const last = [...state.shifts].filter(s => s.jobId === jobId).sort((a, b) => b.date.localeCompare(a.date))[0];
   return last ? {start: last.start, end: last.end} : {start: '16:00', end: '22:00'};
 };
+
+// On a phone browser, before it is installed, the today screen offers once to put the app on the home screen.
+let installEvent = null;
+window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); installEvent = event; if (route().name === 'today') render(); });
+window.addEventListener('appinstalled', () => { installEvent = null; render(); });
+const installed = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const onPhone = () => matchMedia('(max-width: 760px)').matches && matchMedia('(pointer: coarse)').matches;
+function installBanner() {
+  let hidden = false;
+  try { hidden = localStorage.getItem('studyflow.install.hidden') === '1'; } catch { /* show it */ }
+  if (hidden || installed() || !onPhone()) return '';
+  const how = installEvent ? '<button class="primary small" data-action="install">להתקין</button>'
+    : /iPhone|iPad|iPod/.test(navigator.userAgent) ? '<span>ב-Safari לוחצים <b>שיתוף</b> ואז <b>"הוספה למסך הבית"</b>.</span>'
+    : '<span>בתפריט ⋮ של הדפדפן: <b>"התקנת אפליקציה"</b> או <b>"הוספה למסך הבית"</b>.</span>';
+  return `<section class="install-card"><img src="src/studyflow/brand/app-icon-192.png" alt="" width="52" height="52"><div><b>StudyFlow כאפליקציה בטלפון</b>${how}</div><button class="icon-button" data-action="hide-install" aria-label="לא עכשיו">${icon('close')}</button></section>`;
+}
 
 function noticeBanner() {
   const text = {
@@ -261,6 +277,8 @@ document.addEventListener('click', event => {
     'move-to': () => { const o = ui.pending.options[Number(t.dataset.n)], itemId = ui.pending.move; close(); mutate(() => Object.assign(state.items.find(i => i.id === itemId), {date: o.date, start: o.start, end: o.end, done: false}), `הוזז ל־${o.start}.`); },
     'demo': () => { saved = clone(state); state = demoState(); ui.demo = true; render(); },
     'exit-demo': () => { state = saved || state; saved = null; ui.demo = false; undoState = null; render(); },
+    'install': async () => { const e = installEvent; if (!e) return; e.prompt(); await e.userChoice.catch(() => null); installEvent = null; render(); },
+    'hide-install': () => { try { localStorage.setItem('studyflow.install.hidden', '1'); } catch { /* fine */ } render(); },
     'help': () => open(helpContent()),
     'settings': () => open(settingsForm(state.prefs)),
     'export': () => {

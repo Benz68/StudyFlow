@@ -422,3 +422,14 @@ dialog#sheet::backdrop{background:var(--bg)}
 .ask-chips small{font-size:12px;color:var(--muted)}
 .review-blocked{color:#a8452f}
 @media(max-width:650px){.ask-chips{gap:6px}.ask-chip{padding:8px 13px;font-size:14px}}
+
+/* On a phone: feels like an installed app */
+html{-webkit-text-size-adjust:100%;overscroll-behavior-y:none}
+.bottom-nav,.brand,.btn,button{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.field-help a{display:inline-block;padding:10px 0}
+@media(max-width:760px){.bottom-nav{background:color-mix(in srgb,var(--bg) 88%,transparent)}}
+@media(display-mode:standalone){body{-webkit-user-select:none;user-select:none}input,textarea,[contenteditable]{-webkit-user-select:text;user-select:text}}
+.install-card{display:flex;align-items:center;gap:14px;margin:0 0 18px;padding:14px 16px;border-radius:18px;background:var(--card);box-shadow:0 0 0 1px var(--line),0 12px 24px -20px #00000066}
+.install-card img{border-radius:12px;flex:none}
+.install-card>div{display:flex;flex-direction:column;align-items:flex-start;gap:6px;flex:1;min-width:0;font-size:14px;line-height:1.5;color:var(--muted)}
+.install-card>div>b{font-size:15px;color:var(--ink)}
