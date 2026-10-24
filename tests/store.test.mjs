@@ -55,6 +55,7 @@ test('the profile: saves from before it existed skip the first-time questions, n
   const old = validateState({classes: [{id: 'c', title: 'סטטיסטיקה', days: [0], start: '10:00', end: '12:00'}]});
   assert.equal(old.profile.onboarded, true);
   assert.equal(validateState({}).profile.onboarded, false);
-  const kept = validateState({profile: {name: ' דנה ', areas: ['work', 'nope', 'work'], onboarded: true, tips: ['work', 7]}});
-  assert.deepEqual(kept.profile, {name: 'דנה', areas: ['work'], onboarded: true, tips: ['work']});
+  const kept = validateState({profile: {name: ' דנה ', areas: ['work', 'nope', 'work'], onboarded: true, tips: ['work', 7], terms: '2026-10-24'}});
+  assert.deepEqual(kept.profile, {name: 'דנה', areas: ['work'], onboarded: true, tips: ['work'], terms: '2026-10-24'});
+  assert.equal(validateState({profile: {terms: 'yes'}}).profile.terms, '', 'only a real version date counts as agreeing');
 });
