@@ -50,3 +50,11 @@ test('progress: one number per course and per goal', () => {
   const minutes = {...gym, unit: 'minutes', target: 180, log: [{id: 'l', date: '2026-10-16', amount: 90}]};
   assert.equal(goalSummary(minutes, '2026-10-16'), 'שעה וחצי מתוך 3 שעות השבוע');
 });
+
+test('the profile: saves from before it existed skip the first-time questions, new ones start them', () => {
+  const old = validateState({classes: [{id: 'c', title: 'סטטיסטיקה', days: [0], start: '10:00', end: '12:00'}]});
+  assert.equal(old.profile.onboarded, true);
+  assert.equal(validateState({}).profile.onboarded, false);
+  const kept = validateState({profile: {name: ' דנה ', areas: ['work', 'nope', 'work'], onboarded: true, tips: ['work', 7]}});
+  assert.deepEqual(kept.profile, {name: 'דנה', areas: ['work'], onboarded: true, tips: ['work']});
+});
