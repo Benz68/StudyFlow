@@ -145,7 +145,7 @@ function mutate(change, message) {
 // after each change, and checked whenever the app comes back to the front or the connection returns.
 ui.sync = {status: '', at: cloud.syncInfo().syncedAt || 0};
 let syncTimer = null, syncing = false;
-const CLOUD_ERRORS = {offline: 'אין חיבור לאינטרנט.', 'too-many': 'יותר מדי ניסיונות. אפשר לנסות שוב בעוד כמה דקות.',
+const CLOUD_ERRORS = {offline: 'אין חיבור לאינטרנט.', 'too-many': 'כבר שלחנו קוד לפני רגע. הקוד מהמייל האחרון עובד, ואפשר לבקש חדש בעוד דקה.',
   'bad-code': 'הקוד לא נכון או שפג תוקפו. אפשר לבקש קוד חדש.', 'provider-off': 'הכניסה עם Google עוד לא מופעלת.', failed: 'משהו השתבש. אפשר לנסות שוב.'};
 const cloudError = e => CLOUD_ERRORS[e?.code] || CLOUD_ERRORS.failed;
 function changedHere() { cloud.setSyncInfo({editedAt: Date.now()}); if (cloud.user) { clearTimeout(syncTimer); syncTimer = setTimeout(syncNow, 2000); } }
@@ -765,7 +765,9 @@ document.addEventListener('submit', event => {
       const failed = e => { button.disabled = false; formError(form, cloudError(e)); };
       if (kind === 'gate-email') {
         const email = get('email').toLowerCase();
-        cloud.sendCode(email).then(() => { ui.gate = {email, sent: true}; render(); }, failed);
+        // A code asked for a moment ago is still valid: go on to typing it instead of stopping at the limit.
+        cloud.sendCode(email).then(() => { ui.gate = {email, sent: true}; render(); },
+          e => e.code === 'too-many' ? (ui.gate = {email, sent: true, error: cloudError(e)}, render()) : failed(e));
       } else {
         cloud.verifyCode(ui.gate.email, get('code').replace(/\s/g, '')).then(() => { ui.gate = {}; render(); syncNow(); }, failed);
       }

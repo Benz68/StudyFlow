@@ -17,9 +17,9 @@ export function signInScreen({email = '', sent = false, error: problem = '', bus
     return `<section class="gate-page">
       ${mark}
       <h1>בדוק את המייל</h1>
-      <p class="gate-lead">שלחנו מייל ל־<b dir="ltr">${esc(email)}</b>. לוחצים בו על הקישור, באותו מכשיר, ונכנסים. הוא מגיע תוך דקה, וכדאי לבדוק גם בספאם.</p>
+      <p class="gate-lead">שלחנו קוד ל־<b dir="ltr">${esc(email)}</b>. הוא מגיע תוך דקה, וכדאי לבדוק גם בספאם.</p>
       <form data-form="gate-code" class="gate-form">
-        <label for="gate-code">יש במייל קוד? אפשר להקליד אותו כאן</label>
+        <label for="gate-code">הקוד מהמייל</label>
         <input id="gate-code" name="code" class="code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="8" dir="ltr" required>
         ${error(problem)}
         <button class="primary gate-button" type="submit"${busy ? ' disabled' : ''}>כניסה</button>
