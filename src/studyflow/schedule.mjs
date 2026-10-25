@@ -46,10 +46,12 @@ export function freeRanges(state, date, {now = new Date(), extra = [], ignoreId 
   const busy = [...busyOn(state, date, {ignoreId}), ...extra].sort((a, b) => a.start - b.start);
   const ranges = [];
   let cursor = from;
+  // Next to a class only a short walk is kept, so the windows between classes stay usable.
+  const gapFor = b => b.source === 'class' ? Math.min(pause, 5) : pause;
   for (const b of busy) {
-    const start = b.start - pause;
+    const start = b.start - gapFor(b);
     if (start > cursor) ranges.push({start: cursor, end: Math.min(start, to)});
-    cursor = Math.max(cursor, b.end + pause);
+    cursor = Math.max(cursor, b.end + gapFor(b));
     if (cursor >= to) break;
   }
   if (cursor < to) ranges.push({start: cursor, end: to});
@@ -118,7 +120,8 @@ export function planRest(state, goal, {today = localDate(), now = new Date()} = 
     if (slot) open.push({date, start: slot.start, end: slot.end});
   }
   const slots = rest >= open.length ? open : Array.from({length: rest}, (_, i) => open[Math.round(i * (open.length - 1) / Math.max(1, rest - 1))]);
-  return {slots: rest ? slots : [], rest, planned: planned.length};
+  // All the free days are offered; the spread-out suggestion is just what starts selected.
+  return {slots: rest ? slots : [], options: rest ? open : [], rest, planned: planned.length};
 }
 export function plannedMinutes(state, date) {
   return busyOn(state, date).reduce((n, b) => n + Math.max(0, Math.min(b.end, 1440) - Math.max(b.start, 0)), 0);
@@ -140,6 +143,6 @@ export function dayAgenda(state, date, {now = new Date()} = {}) {
     const others = entries.filter(x => x !== e && !x.allDay && a < range(x)[1] && b > range(x)[0]).map(x => x.title);
     if (others.length) e.overlaps = others;
   }
-  const gaps = freeRanges(state, date, {now}).filter(r => r.end - r.start >= 45).map(r => ({type: 'free', start: toClock(r.start), end: toClock(r.end), minutes: r.end - r.start}));
+  const gaps = freeRanges(state, date, {now}).filter(r => r.end - r.start >= 30).map(r => ({type: 'free', date, start: toClock(r.start), end: toClock(r.end), minutes: r.end - r.start}));
   return {entries, gaps};
 }

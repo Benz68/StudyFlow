@@ -224,7 +224,7 @@ function alerts(state, date) {
 const entryExtras = e => `${e.overlaps ? `<p class="entry-overlap">${icon('alert')} חופף ל${e.overlaps.map(esc).join(', ')}</p>` : ''}${e.note ? `<p class="entry-note">${esc(e.note)}</p>` : ''}`;
 
 export function entryRow(e, state, now = new Date()) {
-  if (e.type === 'free') return `<div class="free-row"><span><bdi dir="ltr">${e.start}–${e.end}</bdi></span> פנוי · ${duration(e.minutes)}</div>`;
+  if (e.type === 'free') return `<button class="free-row" data-action="fill-gap" data-date="${esc(e.date || '')}" data-start="${e.start}" data-end="${e.end}" aria-label="להוסיף משהו בין ${e.start} ל־${e.end}"><span><bdi dir="ltr">${e.start}–${e.end}</bdi></span> פנוי · ${duration(e.minutes)}<em>${icon('plus')} להוסיף כאן</em></button>`;
   const time = e.allDay ? '<b>כל היום</b>' : `<b>${e.start}</b><span>${e.end}</span>`;
   if (e.type === 'shift') {
     const shift = state.shifts.find(s => s.id === e.id), job = state.jobs.find(j => j.id === e.jobId);
@@ -302,7 +302,7 @@ function courseCard(c, index, date = localDate()) {
     ${bar(p.percent, `${p.percent}% התקדמות`)}
     <p>${p.total ? `${p.done} מתוך ${p.total} נושאים הושלמו` : 'עוד אין נושאים'}${p.next ? ` · הבא בתור: ${esc(p.next.title)}` : ''}</p>
     <div class="chips">${p.exam !== null ? `<span class="chip ${p.exam <= 14 ? 'urgent' : ''}">מבחן ${countdown(p.exam)}</span>` : ''}${p.nextDeadline ? `<span class="chip">${esc(p.nextDeadline.title)} · ${esc(dateLabel(p.nextDeadline.date))}</span>` : ''}</div>
-    <div class="section-actions"><a class="text-button" href="#course/${esc(c.id)}">נושאים והתקדמות</a><button class="text-button muted" data-action="delete-course" data-id="${esc(c.id)}" aria-label="הסרת ${esc(c.name)} מרשימת ההתקדמות">${icon('trash')} להסיר מההתקדמות</button></div>
+    <a class="course-open" href="#course/${esc(c.id)}">${icon('book')} נושאים והתקדמות ${icon('arrow')}</a><div class="section-actions"><button class="text-button muted" data-action="delete-course" data-id="${esc(c.id)}" aria-label="הסרת ${esc(c.name)} מרשימת ההתקדמות">${icon('trash')} להסיר מההתקדמות</button></div>
   </article>`;
 }
 
@@ -356,6 +356,20 @@ export function coursePage(state, id, ui) {
 }
 
 // "Find me time": the person picks a length, then taps one of the free slots.
+// All free days of the week, to choose from; once the chosen ones reach the target, the goal is covered.
+function restChoices(f) {
+  const full = f.selected.length >= f.rest;
+  const chips = f.options.map((s, n) => {
+    const on = f.selected.includes(n);
+    return `<button class="slot rest-option${on ? ' is-selected' : ''}" data-action="toggle-rest" data-n="${n}" aria-pressed="${on}" ${!on && full ? 'disabled' : ''}>${on ? icon('check') : ''}${esc(dayLabel(s.date))} · <bdi dir="ltr">${s.start}–${s.end}</bdi></button>`;
+  }).join('');
+  const left = f.rest - f.selected.length;
+  return `<p class="field-help">כל הזמנים הפנויים השבוע. בוחרים ${f.rest === 1 ? 'פעם אחת' : `${f.rest} פעמים`}, ואפשר להחליף בחירה:</p>
+      <div class="slots">${chips}</div>
+      ${f.selected.length ? '' : `<button class="text-button" data-action="suggest-rest">${icon('week')} לבחור בשבילי, מפוזר על השבוע</button>`}
+      <p class="rest-count${full ? ' is-full' : ''}" role="status">${full ? `${icon('check')} זהו, הגעת למטרה השבועית` : `נבחרו ${f.selected.length} מתוך ${f.rest} · ${left === 1 ? 'נשארה עוד פעם אחת' : `נשארו עוד ${left}`}`}</p>
+      <button class="primary" data-action="take-all" ${f.selected.length ? '' : 'disabled'}>${icon('check')} להכניס ${f.selected.length === 1 ? 'את מה שבחרתי' : `את ה־${f.selected.length} שבחרתי`}</button>`;
+}
 function findPanel(ui, type, id) {
   const f = ui.find;
   if (!f || f.type !== type || f.id !== id) return '';
@@ -365,8 +379,7 @@ function findPanel(ui, type, id) {
     return `<section class="find-panel" aria-label="שיבוץ מה שנשאר">
     ${planned}
     ${!f.rest ? '<p class="field-help">כל מה שנשאר השבוע כבר בלו״ז.</p>'
-      : slots ? `<p class="field-help">${f.slots.length < f.rest ? `נמצא זמן ל־${f.slots.length} מתוך ${f.rest}` : 'מפוזר על השבוע. לחיצה על זמן מכניסה רק אותו'}:</p><div class="slots">${slots}</div>
-      <button class="primary" data-action="take-all">${icon('check')} להכניס ${f.slots.length === 1 ? 'אותו' : `את כל ה־${f.slots.length}`}</button>`
+      : f.options?.length ? restChoices(f)
       : '<p class="field-help">אין זמן פנוי השבוע באורך של פעם אחת.</p>'}
     <button class="text-button muted" data-action="close-find">סגירה</button>
   </section>`;

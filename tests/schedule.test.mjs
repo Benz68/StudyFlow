@@ -14,9 +14,10 @@ const base = () => validateState({...createState(),
 let n = 0; const id = () => `new-${++n}`;
 const overlaps = (a, b) => toMin(a.start) < toMin(b.end) && toMin(b.start) < toMin(a.end);
 
-test('free time skips classes and items, with a break on each side', () => {
+test('free time skips classes and items, with a break on each side (only a short walk next to a class)', () => {
   const ranges = freeRanges(base(), '2026-10-18', {now: morning});
-  assert.deepEqual(ranges.map(r => [r.start, r.end]), [[480, 590], [730, 1130], [1240, 1320]]);
+  // The class (10:00-12:00) keeps 5 minutes on each side, so windows between classes stay usable; other items keep the full break.
+  assert.deepEqual(ranges.map(r => [r.start, r.end]), [[480, 595], [725, 1130], [1240, 1320]]);
   assert.deepEqual(freeRanges(base(), '2026-10-17', {now: morning}), [], 'past days have no free time');
 });
 
@@ -29,7 +30,7 @@ test('the timetable respects start dates, end dates and skipped days', () => {
 });
 
 test('flexible work goes in the earliest fitting gap, or in the part of day asked for', () => {
-  assert.equal(placeFlexible(base(), '2026-10-18', 120, {now: morning}).start, '12:10', 'two hours do not fit before the class');
+  assert.equal(placeFlexible(base(), '2026-10-18', 120, {now: morning}).start, '12:05', 'two hours do not fit before the class');
   assert.equal(placeFlexible(base(), '2026-10-18', 60, {now: morning}).start, '08:00');
   assert.equal(placeFlexible(base(), '2026-10-18', 60, {now: morning, part: 'evening'}).start, '17:00');
   assert.equal(placeFlexible(base(), '2026-10-18', 600, {now: morning}), null);
@@ -110,4 +111,15 @@ test('a shift gives way to lectures, other shifts and fixed events, and personal
   assert.deepEqual(at('2026-10-18', '12:30', '16:00'), [], 'personal study does not');
   assert.deepEqual(at('2026-10-18', '18:00', '22:00'), ['ארוחה'], 'a fixed event does');
   assert.deepEqual(at('2026-10-19', '23:00', '11:00'), ['סטטיסטיקה'], 'past midnight onto the next day\'s lecture');
+});
+
+test('a window between two classes is free time, and every free day is offered for a goal', () => {
+  const s = base();
+  s.classes.push({...s.classes[0], id: 'c2', title: 'מיקרו', start: '13:00', end: '14:00'});
+  const window = freeRanges(s, '2026-10-18', {now: morning}).find(r => r.start >= 720 && r.end <= 780);
+  assert.deepEqual(window && [window.start, window.end], [725, 775], 'the hour between 12:00 and 13:00 keeps only a short walk on each side');
+  s.goals = [{id: 'gym', title: 'חדר כושר', unit: 'times', target: 2, period: 'week', sessionMinutes: 60, log: []}];
+  const plan = planRest(s, s.goals[0], {today: '2026-10-18', now: morning});
+  assert.equal(plan.slots.length, 2, 'two are suggested');
+  assert.ok(plan.options.length > plan.slots.length, 'but every free day of the week can be chosen');
 });

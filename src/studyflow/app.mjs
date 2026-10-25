@@ -463,7 +463,12 @@ function addFoundSlot(slot) {
     ...(course ? {title: `ללמוד ${course.name}`, kind: 'study', courseId: course.id} : {title: goal.title, kind: 'goal', goalId: goal.id})}), `נכנס ללו״ז: ${dayLabel(slot.date)}, ${slot.start}.`);
   ui.find = f.rest ? restFind(goal) : {...f, slots: findTime(state, f.minutes)}; render();
 }
-const restFind = goal => ({type: 'goal', id: goal.id, minutes: goal.sessionMinutes, ...planRest(state, goal)});
+const restFind = goal => {
+  const plan = planRest(state, goal);
+  // Nothing is chosen for the person; "לבחור בשבילי" picks the spread-out suggestion.
+  return {type: 'goal', id: goal.id, minutes: goal.sessionMinutes, ...plan, selected: [],
+    suggested: plan.slots.map(s => plan.options.findIndex(o => o.date === s.date && o.start === s.start)).filter(n => n >= 0)};
+};
 
 
 
@@ -480,6 +485,14 @@ document.addEventListener('click', event => {
   const actions = {
     'close': close,
     'dismiss-notice': () => { notice = ''; render(); },
+    'fill-gap': () => {
+      const d = t.dataset.date, today = localDate(), [y, m, day] = d.split('-').map(Number);
+      const month = new Date(y, m - 1, day).toLocaleDateString('he-IL', {month: 'long'});
+      const when = d === today ? 'היום' : d === addDays(today, 1) ? 'מחר' : `ב-${day} ב${month}`;
+      ui.tellText = `${when} מ-${t.dataset.start} עד ${t.dataset.end} `; ui.proposals = null;
+      if (route().name !== 'today') location.hash = 'today';
+      render(); setTimeout(() => { const f = main.querySelector('#tell-text'); if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); f.scrollIntoView({block: 'center', behavior: 'smooth'}); } }, 30);
+    },
     'focus-tell': () => { if (route().name !== 'today') location.hash = 'today'; ui.proposals = null; render(); setTimeout(() => main.querySelector('#tell-text')?.focus(), 30); },
     'tell': runTell,
     'answer': () => answer(Number(t.dataset.p), t.dataset.need, t.dataset.value),
@@ -560,8 +573,16 @@ document.addEventListener('click', event => {
     },
     'find-length': () => { ui.find.minutes = Number(t.dataset.minutes); ui.find.slots = findTime(state, ui.find.minutes); render(); },
     'plan-rest': () => { ui.find = restFind(state.goals.find(g => g.id === id)); render(); main.querySelector('.find-panel')?.scrollIntoView({block: 'nearest', behavior: 'smooth'}); },
+    'suggest-rest': () => { ui.find.selected = [...ui.find.suggested]; render(); },
+    'toggle-rest': () => {
+      // Choose freely among all free days; stop at the weekly target.
+      const f = ui.find, n = Number(t.dataset.n), at = f.selected.indexOf(n);
+      if (at >= 0) f.selected.splice(at, 1); else if (f.selected.length < f.rest) f.selected.push(n);
+      render();
+    },
     'take-all': () => {
-      const f = ui.find, goal = state.goals.find(g => g.id === f.id), slots = f.slots;
+      const f = ui.find, goal = state.goals.find(g => g.id === f.id), slots = f.options ? f.selected.map(n => f.options[n]).filter(Boolean) : f.slots;
+      if (!slots.length) return;
       mutate(() => { for (const s of slots) state.items.push({id: uid(), title: goal.title, kind: 'goal', goalId: goal.id, date: s.date, start: s.start, end: s.end, done: false, fixed: false}); },
         `${slots.length === 1 ? 'פעם אחת נכנסה' : `${slots.length} פעמים נכנסו`} ללו״ז.`);
       ui.find = null; render();

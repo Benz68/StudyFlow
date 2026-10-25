@@ -670,3 +670,29 @@ body.gated{overflow:hidden}
 .overlap-ask .primary{justify-self:start}
 .slot.overlap-ok{background:var(--warm);color:var(--warm-ink);font-weight:600}
 .proposal-status.ok .proposal-note{width:100%;margin-top:8px;padding:8px 12px;border:1.5px solid var(--line);border-radius:10px;font:inherit;font-size:14px;background:#fffef9}
+
+/* Phone: no accidental zoom (double-tap or tapping into a text box) */
+html{touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+input,select,textarea{font-size:max(16px,1em)}
+
+/* Goal: every free day to choose from, and a clear "goal reached" */
+.rest-option.is-selected{background:var(--teal-soft,#f8e6dc);border-color:#e3b3a3;color:var(--teal,#b8452f);font-weight:600}
+.rest-option .icon{width:16px;height:16px;margin-inline-end:4px;vertical-align:-3px}
+.rest-option:disabled{opacity:.45;cursor:default}
+.rest-count{font-size:14px;color:var(--muted);margin:10px 0}
+.rest-count.is-full{display:flex;align-items:center;gap:6px;color:#2f7d5b;font-weight:700;background:#e7f3ec;border-radius:12px;padding:8px 12px}
+.rest-count .icon{width:18px;height:18px}
+
+/* Free windows can be tapped to add something there */
+button.free-row{display:flex;align-items:center;gap:8px;width:calc(100% - 68px);box-sizing:border-box;text-align:start;font:inherit;color:inherit;cursor:pointer;border-radius:12px}
+.free-row em{margin-inline-start:auto;font-style:normal;font-size:13px;font-weight:600;color:var(--teal,#b8452f);display:inline-flex;align-items:center;gap:4px}
+.free-row em .icon{width:14px;height:14px}
+@media(hover:hover){button.free-row:hover{background:var(--hover-fill,#f1e9dc)}}
+
+/* Course card: a big, clear way into topics and progress */
+.course-open{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;margin:12px 0 4px;padding:12px 16px;min-height:50px;border-radius:14px;background:var(--ink,#2d2a26);color:#fff;font-weight:700;font-size:16px;text-decoration:none}
+.course-open .icon{width:20px;height:20px}
+.course-open .icon:last-child{margin-inline-start:auto}
+.course-open:active{transform:scale(.99)}
+@media(hover:hover){.course-open:hover{background:#4a443d}}
+@media(max-width:650px){button.free-row{width:calc(100% - 54px)}}
