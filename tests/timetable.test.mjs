@@ -15,7 +15,7 @@ test('expired timetable is diagnosed and repairing the term restores calendar oc
   assert.equal(dayAgenda(s, '2026-10-25').entries.length, 0);
   s.classes = updateSemester(s.classes, '2026-10-25', '2027-02-01');
   assert.equal(dayAgenda(s, '2026-10-25').entries[0].title, 'Statistics');
-  assert.equal(dayAgenda(s, '2026-10-27').entries.length, 0);
+  assert.deepEqual(dayAgenda(s, '2026-10-27').entries.map(e => e.cancelled), [true], 'the cancellation is kept: the class shows as cancelled');
   assert.equal(dayAgenda(s, '2027-02-02').entries.length, 0);
   assert.equal(lesson.until, '2026-07-01', 'update leaves original available for undo');
   const html = calendar(s, {week: '2026-10-25'}, new Date(2026, 9, 25, 8));
