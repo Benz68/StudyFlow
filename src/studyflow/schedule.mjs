@@ -14,9 +14,13 @@ export function shiftsOn(state, date) {
 const WINDOWS = {morning: [0, 720], noon: [720, 1020], evening: [1020, 1440], night: [1260, 1440]};
 export const windowOf = part => WINDOWS[part] || [0, 1440];
 
+const inTerm = (c, date) => c.days.includes(weekday(date)) && (!c.from || date >= c.from) && (!c.until || date <= c.until);
 export function classesOn(state, date) {
-  return state.classes.filter(c => c.days.includes(weekday(date)) && (!c.from || date >= c.from)
-    && (!c.until || date <= c.until) && !c.skipDates.includes(date));
+  return state.classes.filter(c => inTerm(c, date) && !c.skipDates.includes(date));
+}
+// The timetable classes that would be on this date but were marked as not happening (cancelled, or a day away).
+export function cancelledOn(state, date) {
+  return state.classes.filter(c => inTerm(c, date) && c.skipDates.includes(date));
 }
 
 // Everything that already takes time on a date, as minute ranges, sorted.
@@ -130,7 +134,9 @@ export function plannedMinutes(state, date) {
 // One list for a day: timetable classes and planned items, with free gaps between them.
 export function dayAgenda(state, date, {now = new Date()} = {}) {
   const entries = [
-    ...classesOn(state, date).map(c => ({type: 'class', id: c.id, title: c.title, start: c.start, end: c.end, location: c.location, courseId: c.courseId})),
+    ...classesOn(state, date).map(c => ({type: 'class', id: c.id, date, title: c.title, start: c.start, end: c.end, location: c.location, courseId: c.courseId})),
+    // A cancelled class stays in its place, marked, so it can be brought back and its time is seen as freed.
+    ...cancelledOn(state, date).map(c => ({type: 'class', id: c.id, date, title: c.title, start: c.start, end: c.end, location: c.location, courseId: c.courseId, cancelled: true})),
     ...shiftsOn(state, date).map(({shift, start, end}) => ({type: 'shift', id: shift.id, jobId: shift.jobId, title: jobName(state, shift.jobId),
       start: toClock(start), end: end >= 1440 ? '24:00' : toClock(end), continued: shift.date !== date, overnight: end >= 1440, ...(shift.note ? {note: shift.note} : {})})),
     ...state.items.filter(i => i.date === date).map(i => ({type: 'item', ...i})),
@@ -138,9 +144,9 @@ export function dayAgenda(state, date, {now = new Date()} = {}) {
   // Things the person chose to overlap (a Zoom lecture during a shift) say what they overlap with.
   const range = e => [toMin(e.start), e.end === '24:00' ? 1440 : toMin(e.end)];
   for (const e of entries) {
-    if (e.allDay) continue;
+    if (e.allDay || e.cancelled) continue;
     const [a, b] = range(e);
-    const others = entries.filter(x => x !== e && !x.allDay && a < range(x)[1] && b > range(x)[0]).map(x => x.title);
+    const others = entries.filter(x => x !== e && !x.allDay && !x.cancelled && a < range(x)[1] && b > range(x)[0]).map(x => x.title);
     if (others.length) e.overlaps = others;
   }
   const gaps = freeRanges(state, date, {now}).filter(r => r.end - r.start >= 30).map(r => ({type: 'free', date, start: toClock(r.start), end: toClock(r.end), minutes: r.end - r.start}));

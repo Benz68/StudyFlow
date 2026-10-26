@@ -1,7 +1,8 @@
 import {timetableNotice} from './timetable.mjs';
 // Screen templates. Every piece of text the person typed goes through esc().
 import {esc, icon, duration, localDate, addDays, weekStart, dateLabel, dayLabel, fullDayLabel, greeting, DAY_NAMES, DAY_SHORT, toMin, toClock, timeSelect, soft, PALETTE} from './util.mjs';
-import {dayAgenda, plannedMinutes} from './schedule.mjs';
+import {dayAgenda, plannedMinutes, classesOn} from './schedule.mjs';
+import {freedWindow, freedIdeas} from './freed.mjs';
 import {courseProgress, goalProgress, goalSummary, unitLabel, goalStats} from './progress.mjs';
 import {monthSummary, shiftPay, money, hoursLabel, shiftLabel, overnight} from './work.mjs';
 import {streak, upcomingExams, moneyGoal, weekSummary, summaryWeek, hasSomething, weekStats} from './insights.mjs';
@@ -52,7 +53,7 @@ export function today(state, ui, now = new Date()) {
   ${ui.demo ? `<div class="demo-banner">זו דוגמה. שום דבר לא נשמר.<button data-action="exit-demo">חזרה אליי ${icon('arrow')}</button></div>` : ''}
   ${heading('היום', `${greeting(now.getHours())}${state.profile?.name ? `, ${esc(state.profile.name)}` : ''} · יום ${DAY_NAMES[now.getDay()]}, ${dateLabel(date)}`)}
   ${ui.proposals ? reviewCard(ui.proposals, date, state) : tellBox(ui)}
-  ${fresh ? welcome() : `${boost(state, date, now)}${alerts(state, date)}${dayStrip(state, ui.day || date, date)}${dayTimeline(state, ui.day || date, now)}${progressStrip(state, date)}`}`;
+  ${fresh ? welcome() : `${boost(state, date, now)}${alerts(state, date)}${dayStrip(state, ui.day || date, date)}${dayTimeline(state, ui.day || date, now, ui)}${progressStrip(state, date)}`}`;
 }
 
 // What makes coming back worth it: the run of days, the money goal, the exams coming closer, the week in short.
@@ -223,7 +224,7 @@ function alerts(state, date) {
 // What the person chose to overlap, and their own note ("the lecture is on Zoom").
 const entryExtras = e => `${e.overlaps ? `<p class="entry-overlap">${icon('alert')} חופף ל${e.overlaps.map(esc).join(', ')}</p>` : ''}${e.note ? `<p class="entry-note">${esc(e.note)}</p>` : ''}`;
 
-export function entryRow(e, state, now = new Date()) {
+export function entryRow(e, state, now = new Date(), opts = {}) {
   if (e.type === 'free') return `<button class="free-row" data-action="fill-gap" data-date="${esc(e.date || '')}" data-start="${e.start}" data-end="${e.end}" aria-label="להוסיף משהו בין ${e.start} ל־${e.end}"><span><bdi dir="ltr">${e.start}–${e.end}</bdi></span> פנוי · ${duration(e.minutes)}<em>${icon('plus')} להוסיף כאן</em></button>`;
   const time = e.allDay ? '<b>כל היום</b>' : `<b>${e.start}</b><span>${e.end}</span>`;
   if (e.type === 'shift') {
@@ -235,9 +236,17 @@ export function entryRow(e, state, now = new Date()) {
       <div class="entry-actions"><button class="text-button" data-action="edit-shift" data-id="${esc(e.id)}">עריכה</button><button class="text-button muted" data-action="delete-shift" data-id="${esc(e.id)}">למחוק</button></div></div></article>`;
   }
   if (e.type === 'class') {
-    const course = state.courses.find(c => c.id === e.courseId);
+    const course = state.courses.find(c => c.id === e.courseId), ref = `data-id="${esc(e.id)}" data-date="${esc(e.date)}"`;
+    const name = course ? `<a href="#course/${esc(course.id)}">${esc(e.title)}</a>` : esc(e.title);
+    if (e.cancelled) {
+      return `<article class="entry is-class is-cancelled"><div class="time">${time}</div><div class="entry-card">
+        <span class="entry-kind"><span class="cancelled-mark">בוטל</span>שיעור${e.location ? ` · ${esc(e.location)}` : ''}</span><h3>${name}</h3>
+        ${opts.freed || ''}
+        <div class="entry-actions"><button class="text-button muted" data-action="restore-class" ${ref}>${icon('back')} השיעור כן מתקיים</button></div></div></article>`;
+    }
     return `<article class="entry is-class"><div class="time">${time}</div><div class="entry-card">
-      <span class="entry-kind">שיעור${e.location ? ` · ${esc(e.location)}` : ''}</span><h3>${course ? `<a href="#course/${esc(course.id)}">${esc(e.title)}</a>` : esc(e.title)}</h3>${entryExtras(e)}</div></article>`;
+      <span class="entry-kind">שיעור${e.location ? ` · ${esc(e.location)}` : ''}</span><h3>${name}</h3>${entryExtras(e)}
+      ${e.date >= localDate(now) ? `<div class="entry-actions"><button class="text-button muted" data-action="cancel-class" ${ref}>השיעור בוטל</button></div>` : ''}</div></article>`;
   }
   const link = e.courseId ? state.courses.find(c => c.id === e.courseId) : null, goal = e.goalId ? state.goals.find(g => g.id === e.goalId) : null;
   const past = e.date < localDate(now) || (e.date === localDate(now) && !e.allDay && toMin(e.end) < now.getHours() * 60 + now.getMinutes());
@@ -251,16 +260,39 @@ export function entryRow(e, state, now = new Date()) {
     </div></div></article>`;
 }
 
-function dayTimeline(state, date, now) {
+// The time a cancelled class freed, and what could go there: one tap puts it in, or it stays free.
+export function freedPanel(state, e, now, keepFree) {
+  if (e.date < localDate(now) || keepFree?.has(`${e.id}|${e.date}`)) return null;
+  const w = freedWindow(state, e.date, e, {now});
+  if (!w) return null;
+  const wholeDay = !classesOn(state, e.date).length;
+  const ideas = freedIdeas(state, w, {now, wholeDay}), ref = `data-id="${esc(e.id)}" data-date="${esc(e.date)}"`;
+  const label = x => x.kind === 'move' && x.from ? `${x.note} מ${dayLabel(x.from, localDate(now))}` : x.note;
+  return {w, html: `<div class="freed">
+    <p class="freed-head">התפנו לך <b>${duration(w.minutes)}</b> <bdi dir="ltr">${w.start}–${w.end}</bdi>. מה לעשות בהן?</p>
+    ${ideas.length ? `<div class="freed-ideas">${ideas.map((x, n) => `<button class="freed-idea is-${x.kind}" data-action="use-freed" data-n="${n}" ${ref}>
+      ${icon({move: 'arrow', study: 'book', goal: 'target', shift: 'work'}[x.kind])}<span><b>${esc(x.title)}</b><small>${esc(label(x))}</small></span></button>`).join('')}</div>` : ''}
+    <div class="freed-other"><button class="text-button" data-action="fill-gap" data-date="${esc(w.date)}" data-start="${w.start}" data-end="${w.end}">${icon('plus')} משהו אחר</button>
+      <button class="text-button muted" data-action="keep-free" ${ref}>להשאיר פנוי</button></div>
+  </div>`};
+}
+
+function dayTimeline(state, date, now, ui = {}) {
   const {entries, gaps} = dayAgenda(state, date, {now});
-  const rows = [...entries, ...gaps].sort((a, b) => (a.allDay ? -1 : b.allDay ? 1 : a.start.localeCompare(b.start)));
-  const items = entries.filter(e => e.type === 'item' && !e.allDay);
+  // The first cancelled class with time to use gets the ideas; that time is not listed again as a free row.
+  const freedFor = new Map();
+  for (const e of entries.filter(x => x.cancelled)) { if (freedFor.size) break; const p = freedPanel(state, e, now, ui.keepFree); if (p) freedFor.set(e, p); }
+  const taken = [...freedFor.values()].map(p => p.w);
+  const shown = gaps.filter(g => !taken.some(w => toMin(g.start) < toMin(w.end) && toMin(g.end) > toMin(w.start)));
+  const rows = [...entries, ...shown].sort((a, b) => (a.allDay ? -1 : b.allDay ? 1 : a.start.localeCompare(b.start)));
+  const items = entries.filter(e => e.type === 'item' && !e.allDay), cancelled = entries.filter(e => e.cancelled).length;
   const title = date === localDate(now) ? 'הלו״ז של היום' : date === addDays(localDate(now), 1) ? 'הלו״ז של מחר' : `הלו״ז ל${fullDayLabel(date, localDate(now))}`;
   const count = (n, one, many) => n ? [n === 1 ? one : `${n} ${many}`] : [];
-  const summary = [...count(entries.filter(e => e.type === 'class').length, 'שיעור אחד', 'שיעורים'), ...count(entries.filter(e => e.type === 'shift').length, 'משמרת', 'משמרות'),
+  const summary = [...count(entries.filter(e => e.type === 'class' && !e.cancelled).length, 'שיעור אחד', 'שיעורים'), ...(cancelled ? [cancelled === 1 ? 'שיעור אחד בוטל' : `${cancelled} שיעורים בוטלו`] : []),
+    ...count(entries.filter(e => e.type === 'shift').length, 'משמרת', 'משמרות'),
     ...count(items.length, 'פריט אחד', 'פריטים'), ...(items.some(i => i.done) ? [`${items.filter(i => i.done).length} בוצעו`] : [])].join(' · ');
   return `<section class="day">${section(title, entries.length ? summary : 'עוד אין כלום ביום הזה.')}
-    ${rows.length ? `<div class="entries">${rows.map(e => entryRow(e, state, now)).join('')}</div>` : '<div class="day-empty"><h3>יום פנוי</h3><p>מספרים לי למעלה מה צריך לעשות, ואני מוצא לזה זמן.</p></div>'}</section>`;
+    ${rows.length ? `<div class="entries">${rows.map(e => entryRow(e, state, now, {freed: freedFor.get(e)?.html})).join('')}</div>` : '<div class="day-empty"><h3>יום פנוי</h3><p>מספרים לי למעלה מה צריך לעשות, ואני מוצא לזה זמן.</p></div>'}</section>`;
 }
 
 function progressStrip(state, date) {
@@ -559,11 +591,13 @@ const typeOf = e => e.type === 'item' ? e.kind : e.type;
 const jobColor = (state, jobId) => state.jobs.find(j => j.id === jobId)?.color;
 const tint = color => color ? `--c:${color};--soft:${soft(color)};` : '';
 const tintOf = (state, e) => e.type === 'shift' ? tint(jobColor(state, e.jobId)) : '';
+// A class opens a small choice: its course page, or marking it cancelled (or back on).
 const entryAction = e => e.type === 'shift' ? `data-action="edit-shift" data-id="${esc(e.id)}"`
+  : e.type === 'class' ? `data-action="class-menu" data-id="${esc(e.id)}" data-date="${esc(e.date)}"`
   : e.type === 'item' && !e.allDay ? `data-action="move-item" data-id="${esc(e.id)}"` : '';
-const entryLink = (e, inner, cls, style = '') => e.type === 'class' && e.courseId
-  ? `<a class="${cls}" href="#course/${esc(e.courseId)}"${style}>${inner}</a>`
-  : `<button type="button" class="${cls}" ${entryAction(e)}${style}${entryAction(e) ? '' : ' disabled'}>${inner}</button>`;
+const entryLink = (e, inner, cls, style = '') =>
+  `<button type="button" class="${cls}${e.cancelled ? ' is-cancelled' : ''}" ${entryAction(e)}${style}${entryAction(e) ? '' : ' disabled'}>${inner}</button>`;
+const kindLabel = e => e.cancelled ? `<s>${TYPES.class[0]}</s> <em class="cancelled-mark">בוטל</em>` : TYPES[typeOf(e)][0];
 
 export function calendar(state, ui, now = new Date()) {
   // On Saturday the week is over, so the calendar opens on the coming one.
@@ -606,11 +640,12 @@ function calendarGrid(state, days, today) {
     const cards = entries.map(e => {
       const type = typeOf(e), a = e.allDay ? null : toMin(e.start), b = e.allDay ? null : endOf(e);
       const gap = last !== null && a !== null && a - last >= 90 ? `<div class="board-free">פנוי ${duration(a - last)}</div>` : '';
-      const clash = last !== null && a !== null && a < last;
-      if (b !== null) last = Math.max(last ?? 0, b);
+      // A cancelled class takes no time: it neither overlaps nor closes a free gap.
+      const clash = !e.cancelled && last !== null && a !== null && a < last;
+      if (b !== null && !e.cancelled) last = Math.max(last ?? 0, b);
       return gap + entryLink(e, `<span class="board-time">${e.allDay ? 'כל היום' : `<bdi>${e.start}</bdi> <small>עד <bdi>${e.end}</bdi></small>`}</span>
         <b>${esc(e.title)}</b>
-        <span class="board-kind" title="${TYPES[type][0]}">${icon(TYPES[type][1])}${a !== null ? duration(b - a) : TYPES[type][0]}${clash ? `<em>${icon('alert')} חופף</em>` : ''}</span>`,
+        <span class="board-kind" title="${TYPES[type][0]}">${icon(TYPES[type][1])}${e.cancelled ? '<em class="cancelled-mark">בוטל</em>' : a !== null ? duration(b - a) : TYPES[type][0]}${clash ? `<em>${icon('alert')} חופף</em>` : ''}</span>`,
         `board-card t-${type}${e.done ? ' is-done' : ''}`, tintOf(state, e) ? ` style="${tintOf(state, e)}"` : '');
     }).join('');
     return `<section class="board-day${date === today ? ' is-today' : ''}${entries.length ? '' : ' is-free'}">
@@ -627,7 +662,7 @@ function calendarList(state, days, today) {
     <section class="cal-day${date === today ? ' is-today' : ''}${entries.length ? '' : ' is-free'}">
       <h3>${esc(dayLabel(date, today))} <small>${esc(dateLabel(date))}</small>${entries.length ? '' : '<em>פנוי</em>'}</h3>
       ${entries.map(e => entryLink(e, `<span class="cal-time" dir="ltr">${e.allDay ? 'כל היום' : `<b>${e.start}</b><small>${e.end}</small>`}</span>
-        <span class="cal-what"><span class="cal-kind">${icon(TYPES[typeOf(e)][1])}${TYPES[typeOf(e)][0]}${e.overlaps ? `<em>${icon('alert')} חופף</em>` : ''}</span><b>${esc(e.title)}</b>${e.note ? `<small class="cal-note">${esc(e.note)}</small>` : ''}</span>`,
+        <span class="cal-what"><span class="cal-kind">${icon(TYPES[typeOf(e)][1])}${kindLabel(e)}${e.overlaps ? `<em>${icon('alert')} חופף</em>` : ''}</span><b>${esc(e.title)}</b>${e.note ? `<small class="cal-note">${esc(e.note)}</small>` : ''}</span>`,
         `cal-row t-${typeOf(e)}${e.done ? ' is-done' : ''}`, tintOf(state, e) ? ` style="${tintOf(state, e)}"` : '')).join('')}
     </section>`).join('')}</div>`;
 }

@@ -186,6 +186,28 @@ export function moneyGoalForm(profile) {
   </form>`;
 }
 
+// A class in the calendar: its course page, or marking it cancelled for this date only (or the whole day), or back on.
+export function classMenu(c, date, course, {cancelled = false, sameDay = 1} = {}) {
+  const ref = `data-id="${esc(c.id)}" data-date="${esc(date)}"`, day = esc(fullDayLabel(date));
+  const row = (attrs, img, title, sub) => `<button type="button" class="menu-row" ${attrs}>${icon(img)}<span><b>${title}</b><small>${sub}</small></span></button>`;
+  return `${sheetTop(esc(c.title), `${day} · <bdi dir="ltr">${c.start}–${c.end}</bdi>`)}
+  <div class="menu-list">
+    ${cancelled ? row(`data-action="restore-class" ${ref}`, 'back', 'השיעור כן מתקיים', 'להחזיר אותו ליומן')
+      : `${row(`data-action="cancel-class" ${ref}`, 'close', 'השיעור הזה בוטל', `רק ${day}. בשבוע הבא הוא חוזר כרגיל, והזמן שהתפנה מחכה לך בלו״ז`)}
+        ${sameDay > 1 ? row(`data-action="cancel-day" data-date="${esc(date)}"`, 'week', 'כל יום הלימודים בוטל', `כל ${sameDay} השיעורים של ${day}`) : ''}`}
+    ${course ? row(`data-action="open-course" data-id="${esc(course.id)}"`, 'book', 'לדף הקורס', 'נושאים, מבחנים והתקדמות') : ''}
+  </div>`;
+}
+
+// "מחר אין לימודים" said in "tell me": which classes, for a yes before anything changes.
+export function cancelSheet(date, classes, named) {
+  return `${sheetTop(named ? 'לסמן שהשיעור בוטל?' : 'לסמן שאין לימודים?', esc(fullDayLabel(date)))}
+  <ul class="cancel-list">${classes.map(c => `<li><bdi dir="ltr">${c.start}–${c.end}</bdi> <b>${esc(c.title)}</b></li>`).join('')}</ul>
+  <p class="field-help">השיעורים יישארו ביומן, מסומנים כמבוטלים, והזמן שהתפנה יחכה לך בלו״ז. בשבוע הבא הם חוזרים כרגיל.</p>
+  <button class="primary submit-button" data-action="confirm-cancel" data-date="${esc(date)}">${icon('check')} כן, ${classes.length === 1 ? 'השיעור בוטל' : 'השיעורים בוטלו'}</button>
+  <button class="text-button" data-action="close">לא, ביטול</button>`;
+}
+
 export function settingsForm(prefs) {
   return `${sheetTop('העדפות')}
   <form data-form="settings">
@@ -265,7 +287,7 @@ export function helpContent() {
     <p><b>עבודה.</b> עסק ושכר לשעה, משמרות לשבוע שלם בבת אחת, וחישוב של כמה יצא בכל משמרת ובכל חודש.</p>
     <p><b>מטרות אישיות.</b> יעד פשוט, כמו 3 אימונים בשבוע. "לשבץ את מה שנשאר" מוצא זמן פנוי לשאר השבוע.</p>
     <p><b>החשבון.</b> הכול נשמר בחשבון שלך ומתעדכן בכל המכשירים שמתחברים אליהם. גם בלי אינטרנט הכול עובד, ומתעדכן כשהחיבור חוזר.</p>
-    <p class="muted">בלי בינה מלאכותית. הזיהוי הקולי נעשה על ידי Google או Apple. <a href="privacy.html" target="_blank" rel="noopener">מדיניות הפרטיות</a> · <a href="terms.html" target="_blank" rel="noopener">תנאי השימוש</a></p>
+    <p class="muted"><a href="privacy.html" target="_blank" rel="noopener">מדיניות הפרטיות</a> · <a href="terms.html" target="_blank" rel="noopener">תנאי השימוש</a></p>
   </div>
   <button class="primary submit-button" data-action="close">הבנתי</button>`;
 }

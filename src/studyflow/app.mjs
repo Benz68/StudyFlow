@@ -6,9 +6,10 @@ import {loadState, saveState, validateState, migrateV1, demoState, createState} 
 import {signInScreen, waitScreen, onboardingScreen, termsUpdateScreen, TERMS_VERSION} from './onboarding.mjs';
 import {tourSteps, tourBubble} from './tour.mjs';
 import {shell, sheetTop, today, studies, coursePage, goals, goalPage, calendar, work, jobPage, openQuestions} from './screens.mjs';
-import {classForm, icsPreview, courseForm, topicsForm, goalForm, logForm, moveForm, settingsForm, helpContent, jobForm, shiftForm, weekShiftsForm, payCard, accountSheet, deleteAccountSheet, chooseCopySheet, moneyGoalForm} from './dialogs.mjs';
+import {classForm, icsPreview, courseForm, topicsForm, goalForm, logForm, moveForm, settingsForm, helpContent, jobForm, shiftForm, weekShiftsForm, payCard, accountSheet, deleteAccountSheet, chooseCopySheet, moneyGoalForm, classMenu, cancelSheet} from './dialogs.mjs';
 import {createCloud, decide, isEmpty} from './cloud.mjs';
-import {parseTell} from './tell.mjs';
+import {parseTell, parsePart, splitParts} from './tell.mjs';
+import {freedWindow, freedIdeas, isCancellation, cancellationClasses} from './freed.mjs';
 import {propose, toItems, toShifts} from './propose.mjs';
 import {findTime, planRest, shiftClashes, conflictsFor, classesOn, placeFlexible, alternatives} from './schedule.mjs';
 import {repeatDates} from './work.mjs';
@@ -21,7 +22,7 @@ const Recognition = globalThis.SpeechRecognition || globalThis.webkitSpeechRecog
 let {state, notice} = loadState();
 const cloud = createCloud();
 let saved = null, undoState = null, toastTimer = null, recognition = null, returnFocus = null;
-const ui = {tellText: '', drafts: null, proposals: null, find: null, week: '', demo: false, micAvailable: !!Recognition, listening: false, pending: null};
+const ui = {tellText: '', drafts: null, proposals: null, find: null, week: '', demo: false, micAvailable: !!Recognition, listening: false, pending: null, keepFree: new Set()};
 
 document.querySelector('#app').innerHTML = shell();
 // The way in (sign-in, then the first-time questions) covers the app until it is done.
@@ -316,6 +317,14 @@ function runTell() {
   const text = (main.querySelector('#tell-text')?.value || ui.tellText).trim();
   ui.tellText = text; ui.tellError = '';
   if (!text) { ui.tellError = 'קודם כותבים או אומרים מה צריך לעשות.'; return render(); }
+  // "מחר אין לימודים" / "השיעור במיקרו ביום רביעי בוטל": asked to confirm first; the rest of the sentence follows after.
+  const parts = splitParts(text), said = parts.find(isCancellation);
+  if (said) {
+    const date = parsePart(said, state).date || localDate(), {named, classes} = cancellationClasses(state, date, said);
+    if (!classes.length) { ui.tellError = `ב${dayLabel(date)} אין שיעורים במערכת השעות.`; return render(); }
+    ui.pending = {cancel: classes.map(c => c.id), rest: parts.filter(p => p !== said).join(', ')};
+    return open(cancelSheet(date, classes, named));
+  }
   const drafts = parseTell(text, state);
   if (!drafts.length) { ui.tellError = 'לא הצלחתי להבין. אפשר לנסות לכתוב כל דבר בנפרד, עם פסיקים.'; return render(); }
   ui.drafts = drafts; refreshProposals();
@@ -430,6 +439,30 @@ function toggleMic() {
   ui.listening = true; render();
 }
 
+// ── Cancelled classes ──
+// A cancelled class stays in the calendar, marked; the day opens on "today" so the freed time and its ideas are seen.
+function cancelClasses(date, ids) {
+  if (!ids.length) return;
+  close();
+  mutate(() => { for (const c of state.classes) if (ids.includes(c.id) && !c.skipDates.includes(date)) c.skipDates.push(date); },
+    ids.length === 1 ? 'השיעור סומן כמבוטל.' : `${ids.length} שיעורים סומנו כמבוטלים.`);
+  ui.day = date === localDate() ? '' : date; ui.tellText = ''; ui.proposals = null;
+  if (route().name !== 'today') location.hash = 'today'; else render();
+}
+// One of the ideas for the freed time, as shown under the cancelled class.
+function useFreed(classId, date, n) {
+  const c = state.classes.find(x => x.id === classId), w = c && freedWindow(state, date, c);
+  const idea = w && freedIdeas(state, w, {wholeDay: !classesOn(state, date).length})[n];
+  if (!idea) return;
+  const {slot} = idea;
+  if (idea.kind === 'shift') return open(shiftForm(state, {date: slot.date, start: slot.start, end: slot.end}));
+  mutate(() => {
+    if (idea.kind === 'move') Object.assign(state.items.find(i => i.id === idea.id), {date: slot.date, start: slot.start, end: slot.end, done: false});
+    else state.items.push({id: uid(), title: idea.title, kind: idea.kind, date: slot.date, start: slot.start, end: slot.end, done: false, fixed: false,
+      ...(idea.courseId ? {courseId: idea.courseId} : {}), ...(idea.goalId ? {goalId: idea.goalId} : {})});
+  }, `נכנס לזמן שהתפנה: ${slot.start}–${slot.end}.`);
+}
+
 // ── Items in the schedule ──
 function toggleDone(id) {
   const item = state.items.find(i => i.id === id); if (!item) return;
@@ -503,6 +536,27 @@ document.addEventListener('click', event => {
     'pick-option': () => { const p = ui.proposals[Number(t.dataset.p)], o = p.options[Number(t.dataset.o)]; Object.assign(ui.drafts[Number(t.dataset.p)], {fixed: true, allDay: false, date: o.date, start: o.start, end: o.end, needs: []}); refreshProposals(); },
     'money-goal': () => open(moneyGoalForm(state.profile)),
     'terms-agree': () => { if (mustAgree()) return; ui.gate = {}; render(); },
+    // Cancelled classes and the time they free
+    'class-menu': () => {
+      const c = state.classes.find(x => x.id === id), date = t.dataset.date; if (!c) return;
+      open(classMenu(c, date, state.courses.find(x => x.id === c.courseId), {cancelled: c.skipDates.includes(date), sameDay: classesOn(state, date).length}));
+    },
+    'open-course': () => { close(); location.hash = `course/${id}`; },
+    'cancel-class': () => cancelClasses(t.dataset.date, [id]),
+    'cancel-day': () => cancelClasses(t.dataset.date, classesOn(state, t.dataset.date).map(c => c.id)),
+    'confirm-cancel': () => {
+      const rest = ui.pending?.rest || '', date = t.dataset.date;
+      cancelClasses(date, ui.pending?.cancel || []);
+      if (!rest) return;
+      // "מחר אין לימודים, ללמוד שעה מודלים": the rest goes on the day that was freed, unless it names its own.
+      ui.tellText = rest; runTell();
+      if (!ui.drafts) return;
+      for (const d of ui.drafts) if (d.needs?.includes('day')) { d.date = date; d.needs = d.needs.filter(n => n !== 'day'); }
+      refreshProposals();
+    },
+    'restore-class': () => { const date = t.dataset.date; close(); mutate(() => { const c = state.classes.find(x => x.id === id); if (c) c.skipDates = c.skipDates.filter(d => d !== date); }, 'השיעור חזר ליומן.'); },
+    'keep-free': () => { ui.keepFree.add(`${id}|${t.dataset.date}`); render(); },
+    'use-freed': () => useFreed(id, t.dataset.date, Number(t.dataset.n)),
     'hide-tip': () => mutate(() => { state.profile.tips = [...new Set([...state.profile.tips, t.dataset.tip])]; }),
     'allow-overlap': () => { const d = ui.drafts[Number(t.dataset.p)]; if (d) { d.allowOverlap = true; refreshProposals(); } },
     // "Add anyway" in a form: the form is sent again with the yes, and the note typed next to it.

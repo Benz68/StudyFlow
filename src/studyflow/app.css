@@ -644,6 +644,38 @@ body.gated{overflow:hidden}
   .exam-page{width:76px}
   .boost-note h3{font-size:26px}
 }
+/* A cancelled class: still in its place, faded and crossed out, with a red stamp; under it, the time it freed */
+.cancelled-mark{display:inline-block;margin-inline-end:6px;padding:0 7px;border:1.5px solid #d63a2f;border-radius:4px;color:#d63a2f;font-size:11px;font-weight:800;font-style:normal;letter-spacing:.04em;transform:rotate(-4deg);background:#fff8}
+.entry.is-cancelled .time{opacity:.45;text-decoration:line-through}
+.entry.is-cancelled .entry-card{background:repeating-linear-gradient(-45deg,transparent 0 9px,#00000006 9px 11px),var(--card);border-right-color:#c9bfae}
+.entry.is-cancelled h3,.entry.is-cancelled h3 a{color:var(--muted);text-decoration:line-through;text-decoration-color:#d63a2f88}
+.board-card.is-cancelled,.cal-row.is-cancelled{opacity:.62}
+.board-card.is-cancelled b,.cal-row.is-cancelled b{text-decoration:line-through;text-decoration-color:#d63a2f99}
+.board-card.is-cancelled .cancelled-mark{margin:0 6px}
+.cal-row.is-cancelled s{text-decoration:none}
+.freed{margin-top:10px;padding:12px 14px;border-radius:12px;background:#fbe9a6;box-shadow:0 1px 2px #0000000d;display:grid;gap:8px;animation:enter .35s var(--ease) both}
+.freed-head{font-size:14.5px;line-height:1.5}
+.freed-head b{font-family:'Amatic SC',Heebo,sans-serif;font-size:24px;line-height:1;color:var(--teal)}
+.freed-ideas{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px}
+.freed-idea{display:flex;align-items:flex-start;gap:9px;padding:9px 11px;border-radius:10px;background:var(--card);box-shadow:0 0 0 1px #b88a1433;text-align:start;font:inherit;color:inherit}
+.freed-idea:hover{box-shadow:0 0 0 1.5px var(--teal),0 6px 12px -8px #00000055}
+.freed-idea>.icon{width:18px;height:18px;flex:none;margin-top:2px;color:var(--teal)}
+.freed-idea.is-goal>.icon{color:#e2a33b}.freed-idea.is-shift>.icon{color:#5b4ea8}
+.freed-idea span{display:grid;gap:1px;min-width:0}
+.freed-idea b{font-size:14px;line-height:1.35}
+.freed-idea small{font-size:12px;color:var(--muted);line-height:1.4}
+.freed-other{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center}
+/* The class menu, and the list of classes to mark cancelled */
+.menu-list{display:grid;gap:8px;margin-top:8px}
+.menu-row{display:flex;align-items:flex-start;gap:12px;width:100%;padding:13px 14px;border-radius:12px;background:var(--card);box-shadow:0 0 0 1px var(--line);text-align:start;font:inherit;color:inherit}
+.menu-row:hover{box-shadow:0 0 0 1.5px var(--teal)}
+.menu-row>.icon{width:20px;height:20px;flex:none;margin-top:2px;color:var(--teal)}
+.menu-row span{display:grid;gap:2px}
+.menu-row b{font-size:15.5px}
+.menu-row small{font-size:13px;color:var(--muted);line-height:1.45}
+.cancel-list{list-style:none;margin:10px 0;padding:0;display:grid;gap:6px}
+.cancel-list li{display:flex;gap:10px;align-items:baseline;padding:9px 12px;border-radius:10px;background:var(--card);box-shadow:0 0 0 1px var(--line)}
+.cancel-list bdi{color:var(--muted);font-size:13.5px}
 /* The calendar's note on where the classes come from: a sticky note with a pen arrow down to the week */
 .cal-hint{position:relative;max-width:520px;margin:18px 0 34px;padding:20px 18px 12px;background:#fbe9a6;border-radius:2px 2px 16px 2px;box-shadow:0 1px 2px #0000000f,0 12px 18px -14px #00000055;transform:rotate(-.6deg)}
 .cal-hint h3{font-family:'Amatic SC',Heebo,sans-serif;font-size:30px;line-height:1.05;margin-bottom:4px}
