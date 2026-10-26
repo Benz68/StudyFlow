@@ -62,6 +62,6 @@ export function toItems(proposals, makeId) {
   }));
 }
 export function toShifts(proposals, makeId) {
-  return proposals.filter(p => p.status === 'ok' && p.kind === 'shift' && p.jobId)
+  return proposals.filter(p => p.status === 'ok' && p.kind === 'shift' && p.jobId && p.start && p.end)
     .map(p => ({id: makeId(), jobId: p.jobId, date: p.date, start: p.start, end: p.end, breakMinutes: 0, tips: 0, ...(p.note ? {note: p.note} : {})}));
 }

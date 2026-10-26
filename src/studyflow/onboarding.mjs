@@ -12,7 +12,7 @@ const consent = agreed => `<label class="gate-consent"><input type="checkbox" id
 const dots = (n, total) => `<div class="gate-steps" role="img" aria-label="שלב ${n} מתוך ${total}">${Array.from({length: total}, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}</div>`;
 const error = text => `<p class="form-error" data-error role="alert">${esc(text || '')}</p>`;
 
-export function signInScreen({email = '', sent = false, error: problem = '', busy = false, agreed = false} = {}) {
+export function signInScreen({email = '', sent = false, error: problem = '', busy = false, agreed = false, iosApp = false} = {}) {
   if (sent) {
     return `<section class="gate-page">
       ${mark}
@@ -32,7 +32,9 @@ export function signInScreen({email = '', sent = false, error: problem = '', bus
     <h1>ברוך הבא ל־StudyFlow</h1>
     <p class="gate-lead">לימודים, עבודה ומטרות אישיות במקום אחד. מספרים מה יש, והשבוע מסתדר בזמן הפנוי.</p>
     ${consent(agreed)}
-    ${GOOGLE_SIGN_IN ? `<button class="google-button gate-button" data-action="google">${googleG} המשך עם Google</button><div class="or-line"><span>או</span></div>` : ''}
+    ${GOOGLE_SIGN_IN ? `<button class="google-button gate-button" data-action="google">${googleG} המשך עם Google</button>
+      ${iosApp ? '<p class="gate-fine">באייפון, מתוך האפליקציה שבמסך הבית, הכניסה עם Google לפעמים לא חוזרת לאפליקציה. אם זה קורה, נכנסים עם קוד במייל.</p>' : ''}
+      <div class="or-line"><span>או</span></div>` : ''}
     <form data-form="gate-email" class="gate-form">
       <label for="gate-email">מייל</label>
       <input id="gate-email" name="email" type="email" autocomplete="email" inputmode="email" required dir="ltr" placeholder="name@example.com" value="${esc(email)}">

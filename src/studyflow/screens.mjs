@@ -1,6 +1,6 @@
 import {timetableNotice} from './timetable.mjs';
 // Screen templates. Every piece of text the person typed goes through esc().
-import {esc, icon, duration, localDate, addDays, weekStart, dateLabel, dayLabel, fullDayLabel, greeting, DAY_NAMES, DAY_SHORT, toMin, toClock, timeSelect, soft, PALETTE} from './util.mjs';
+import {esc, icon, duration, localDate, addDays, weekStart, daysBetween, dateLabel, dayLabel, fullDayLabel, greeting, DAY_NAMES, DAY_SHORT, toMin, toClock, timeSelect, soft, PALETTE} from './util.mjs';
 import {dayAgenda, plannedMinutes, classesOn} from './schedule.mjs';
 import {freedWindow, freedIdeas} from './freed.mjs';
 import {courseProgress, goalProgress, goalSummary, unitLabel, goalStats} from './progress.mjs';
@@ -215,7 +215,7 @@ function alerts(state, date) {
   const list = [];
   for (const c of state.courses) {
     // Exams have their own countdown cards above.
-    for (const d of c.deadlines) if (!d.done && d.date >= date && d.date <= addDays(date, 3)) list.push(`<a href="#course/${esc(c.id)}">${esc(d.title)} (${esc(c.name)}) ${countdown((new Date(`${d.date}T12:00:00`) - new Date(`${date}T12:00:00`)) / 864e5)}</a>`);
+    for (const d of c.deadlines) if (!d.done && d.date >= date && d.date <= addDays(date, 3)) list.push(`<a href="#course/${esc(c.id)}">${esc(d.title)} (${esc(c.name)}) ${countdown(daysBetween(date, d.date))}</a>`);
   }
   if (plannedMinutes(state, date) > 10 * 60) list.push('<span>היום עמוס מאוד. אולי כדאי להזיז משהו למחר?</span>');
   return list.length ? `<section class="alerts" aria-label="תזכורות">${list.map(a => `<p>${icon('alert')} ${a}</p>`).join('')}</section>` : '';
@@ -349,7 +349,7 @@ export function coursePage(state, id, ui) {
       <button class="icon-button" data-action="delete-topic" data-course="${esc(c.id)}" data-id="${esc(t.id)}" aria-label="למחוק את ${esc(t.title)}">${icon('trash')}</button></div>`).join('');
   const deadlines = [...c.deadlines].sort((a, b) => a.date.localeCompare(b.date)).map(d => `<div class="deadline${d.done ? ' is-done' : ''}">
       <button class="task-check ${d.done ? 'checked' : ''}" data-action="toggle-deadline" data-course="${esc(c.id)}" data-id="${esc(d.id)}" aria-label="${d.done ? 'לבטל סימון' : 'סימון כבוצע'}: ${esc(d.title)}">${d.done ? icon('check') : ''}</button>
-      <span><b>${esc(d.title)}</b> · ${esc(dateLabel(d.date))}${!d.done && d.date >= date ? ` · ${countdown(Math.round((new Date(`${d.date}T12:00:00`) - new Date(`${date}T12:00:00`)) / 864e5))}` : ''}</span>
+      <span><b>${esc(d.title)}</b> · ${esc(dateLabel(d.date))}${!d.done && d.date >= date ? ` · ${countdown(daysBetween(date, d.date))}` : ''}</span>
       <button class="icon-button" data-action="delete-deadline" data-course="${esc(c.id)}" data-id="${esc(d.id)}" aria-label="למחוק את ${esc(d.title)}">${icon('trash')}</button></div>`).join('');
   return `
   ${back('studies', 'לימודים')}

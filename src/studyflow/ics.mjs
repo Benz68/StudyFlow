@@ -1,6 +1,6 @@
 // Reads a calendar file (.ics, as exported by Google Calendar, Outlook or a university portal) into
 // weekly timetable classes and one-time events. Plain parsing of a standard format; nothing leaves the device.
-import {localDate, toClock, weekday} from './util.mjs';
+import {localDate, toClock, weekday, weekStart, addDays} from './util.mjs';
 
 const BYDAY = {SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6};
 
@@ -39,19 +39,41 @@ export function parseICS(text) {
   const classes = [], once = [];
   for (const e of events) {
     if (e.cancelled || !e.title || !e.start || e.start.allDay || !e.end || e.end.minutes === undefined) continue;
-    const start = toClock(e.start.minutes), end = toClock(Math.max(e.end.minutes, e.start.minutes + 15));
+    // A class running past midnight ends at 23:59 that day (the planner's day ends there); one starting after 23:44 is left out.
+    if (e.start.minutes > 1424) continue;
+    const endMinutes = e.end.date > e.start.date ? 1439 : Math.max(e.end.minutes, e.start.minutes + 15);
+    const start = toClock(e.start.minutes), end = toClock(Math.min(endMinutes, 1439));
     if (e.rule?.FREQ === 'WEEKLY') {
-      const days = (e.rule.BYDAY ? e.rule.BYDAY.split(',').map(d => BYDAY[d.slice(-2)]).filter(d => d !== undefined) : [weekday(e.start.date)]);
+      const days = [...new Set(e.rule.BYDAY ? e.rule.BYDAY.split(',').map(d => BYDAY[d.slice(-2)]).filter(d => d !== undefined) : [weekday(e.start.date)])];
       // The end date as written: "until 15.1 23:59 UTC" means the 15th, even where that is already the 16th.
-      const u = /^(\d{4})(\d{2})(\d{2})/.exec(e.rule.UNTIL || ''), until = u ? `${u[1]}-${u[2]}-${u[3]}` : undefined;
-      classes.push({title: e.title.slice(0, 120), days: [...new Set(days)], start, end, location: (e.location || '').slice(0, 80),
-        from: e.start.date, ...(until ? {until} : {}), skipDates: e.skip || []});
+      const u = /^(\d{4})(\d{2})(\d{2})/.exec(e.rule.UNTIL || ''), written = u ? `${u[1]}-${u[2]}-${u[3]}` : undefined;
+      const {until, off} = repeats(e.start.date, days, Number(e.rule.INTERVAL) || 1, Number(e.rule.COUNT) || 0, written);
+      classes.push({title: e.title.slice(0, 120), days, start, end, location: (e.location || '').slice(0, 80),
+        from: e.start.date, ...(until ? {until} : {}), skipDates: [...new Set([...(e.skip || []), ...off])]});
     } else if (!e.rule) {
       once.push({title: e.title.slice(0, 120), date: e.start.date, start, end});
     }
   }
   // The same class exported once per week becomes one weekly class.
   return {classes: mergeRepeats(classes, once), once: once.filter(o => !o.merged)};
+}
+
+// "Every two weeks" or "10 times": a weekly class whose off weeks are skipped and which ends at its last meeting.
+// Every week with no end stays as it is; every other week with no end is laid out for a year.
+function repeats(from, days, interval, count, until) {
+  if (interval === 1 && !count) return {until, off: []};
+  const start = weekStart(from), last = until || addDays(from, 365), on = new Set(), off = [];
+  for (let w = 0; ; w++) {
+    const sunday = addDays(start, w * 7);
+    if (sunday > last || (count && on.size >= count)) break;
+    for (const d of [...days].sort()) {
+      const date = addDays(sunday, d);
+      if (date < from || date > last || (count && on.size >= count)) continue;
+      if (w % interval === 0) on.add(date); else off.push(date);
+    }
+  }
+  const end = [...on].sort().at(-1);
+  return {until: end, off: off.filter(d => d <= end)};
 }
 
 function mergeRepeats(classes, once) {

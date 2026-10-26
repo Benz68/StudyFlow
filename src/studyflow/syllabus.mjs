@@ -1,5 +1,6 @@
 // Turns a syllabus into a list of topics and dated assignments, with plain rules (no AI).
 // Word files (.docx) are read right in the browser: a .docx is a zip with the text in word/document.xml.
+import {localDate, validDate} from './util.mjs';
 
 export async function fileText(file) {
   if (/\.docx$/i.test(file.name)) return docxText(await file.arrayBuffer());
@@ -52,7 +53,7 @@ const NOISE = /^(?:שבוע|week|שיעור|lesson|נושא|topic|תאריך|dat
 const DETAILS = /^(?:סילבוס|syllabus|שם הקורס|מספר הקורס|מס['׳]? קורס|קוד קורס|מרצה|מרצים|מתרגל|מתרגלת|מתרגלים|שעות קבלה|דוא["״]?ל|אימייל|e-?mail|טלפון|מיקום|חדר|שנה["״]?ל|שנת הלימודים|סמסטר|נקודות זכות|נ["״]?ז|היקף|מטרות|מטרת|תיאור הקורס|דרישות|חובות|הרכב הציון|ציון|נוכחות|ביבליוגרפיה|קריאה|ספרות|רשימת קריאה|נושאי הקורס|תוכנית הקורס|לוח זמנים|מבנה הקורס|מועדי הגשה|מטלות הקורס|הערות|instructor|office hours|grading|reading|prerequisites)(?=$|[\s:.,()\-–])/i;
 
 // Splits pasted or loaded text into topics and assignments with a date (exam, submission).
-export function readSyllabus(text, {today = new Date().toISOString().slice(0, 10)} = {}) {
+export function readSyllabus(text, {today = localDate()} = {}) {
   const topics = [], deadlines = [], seen = new Set();
   for (const raw of String(text || '').split(/\r?\n/)) {
     const line = raw.replace(/^\s*(?:[-*•▪◦]|\(?\d{1,2}[.)]|שבוע\s*\d+\s*[:.-]?|week\s*\d+\s*[:.-]?|שיעור\s*\d+\s*[:.-]?)\s*/i, '').replace(/\s*·\s*/g, ' · ').trim();
@@ -64,7 +65,8 @@ export function readSyllabus(text, {today = new Date().toISOString().slice(0, 10
       let iso = `${year}-${String(date[2]).padStart(2, '0')}-${String(date[1]).padStart(2, '0')}`;
       if (!date[3] && iso < today) iso = `${year + 1}${iso.slice(4)}`;
       const title = line.replace(DATE, '').replace(/\s*·\s*/g, ' ').replace(/[-–:,]+\s*$/, '').replace(/^\s*[-–:,]+/, '').trim();
-      if (!Number.isNaN(new Date(`${iso}T12:00:00`).getTime())) { deadlines.push({title: title.slice(0, 120) || 'מועד', date: iso}); continue; }
+      // A date that does not exist (31.11) is not turned into another day; the line stays a topic to fix by hand.
+      if (validDate(iso)) { deadlines.push({title: title.slice(0, 120) || 'מועד', date: iso}); continue; }
     }
     // Headings and details, grade weights ("מבחן 50%"), and book references ("לוי, נ. (2024).") are not topics.
     if (DETAILS.test(line) || /^(?:מטלות|מועדים|הגשות|מבחנים)(?=$|[\s:])/.test(line) || /\d\s*%/.test(line) || /\((?:19|20)\d{2}\)/.test(line)) continue;

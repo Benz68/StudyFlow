@@ -2,12 +2,12 @@ import {semesterFields, updateSemester} from './timetable.mjs';
 // The app: one state object saved in this browser, screens chosen by the address (#today, #course/ID…),
 // and every change made through mutate() so it is validated, saved and can be undone.
 import {esc, uid, localDate, addDays, toMin, toClock, weekStart, validDate, dayLabel, dateLabel, PALETTE, icon} from './util.mjs';
-import {loadState, saveState, validateState, migrateV1, demoState, createState} from './store.mjs';
+import {loadState, saveState, validateState, migrateV1, demoState, createState, mergeStates} from './store.mjs';
 import {signInScreen, waitScreen, onboardingScreen, termsUpdateScreen, TERMS_VERSION} from './onboarding.mjs';
 import {tourSteps, tourBubble} from './tour.mjs';
 import {shell, sheetTop, today, studies, coursePage, goals, goalPage, calendar, work, jobPage, openQuestions} from './screens.mjs';
 import {classForm, icsPreview, courseForm, topicsForm, goalForm, logForm, moveForm, settingsForm, helpContent, jobForm, shiftForm, weekShiftsForm, payCard, accountSheet, deleteAccountSheet, chooseCopySheet, moneyGoalForm, classMenu, cancelSheet} from './dialogs.mjs';
-import {createCloud, decide, isEmpty} from './cloud.mjs';
+import {createCloud, decide, isEmpty, isDirty} from './cloud.mjs';
 import {parseTell, parsePart, splitParts} from './tell.mjs';
 import {freedWindow, freedIdeas, isCancellation, cancellationClasses} from './freed.mjs';
 import {propose, toItems, toShifts} from './propose.mjs';
@@ -35,12 +35,17 @@ const clone = value => JSON.parse(JSON.stringify(value));
 navigator.storage?.persist?.().catch(() => {});
 
 // ── Rendering ──
-const route = () => { const [name, id] = location.hash.slice(1).split('/'); return {name: name || 'today', id: decodeURIComponent(id || '')}; };
+// A broken address ("#course/%") opens the screen with nothing found, never a blank page.
+const route = () => {
+  const [name, id] = location.hash.slice(1).split('/');
+  let decoded = ''; try { decoded = decodeURIComponent(id || ''); } catch { /* left empty */ }
+  return {name: name || 'today', id: decoded};
+};
 
 // What covers the app right now: signing in, loading the account on a new device, or the first-time questions.
 function gateScreen() {
   if (ui.signingIn) return waitScreen('מתחבר…');
-  if (!cloud.user) return signInScreen({...ui.gate, agreed: agreedHere()});
+  if (!cloud.user) return signInScreen({...ui.gate, agreed: agreedHere(), iosApp: navigator.standalone === true});
   if (!ui.firstSync && isEmpty(state) && !cloud.syncInfo().syncedAt) {
     return ui.loadError ? waitScreen('אין חיבור לאינטרנט. בפעם הראשונה צריך חיבור כדי לטעון את המידע שלך.', {retry: true}) : waitScreen('טוען את המידע שלך…');
   }
@@ -135,9 +140,17 @@ function toast(message, withUndo = false) {
   toastTimer = setTimeout(() => el.classList.remove('visible'), 6000);
 }
 
+// Every change goes through here. If what it changes is gone (deleted on another device while a form was open),
+// nothing changes and the person is told. "Undo" always undoes the change its message names: a quiet change
+// (a topic's status, a tip put away) takes the undo button away instead of quietly becoming what it undoes.
 function mutate(change, message) {
-  undoState = clone(state);
-  change();
+  const before = clone(state);
+  try { change(); } catch {
+    state = before; render();
+    return toast('לא הצלחתי לשמור: מה שניסית לשנות כבר לא נמצא. אולי הוא נמחק במכשיר אחר.');
+  }
+  undoState = message ? before : null;
+  if (!message) document.querySelector('.toast-undo')?.remove();
   if (!ui.demo) state.profile.activeDays = markActive(state.profile.activeDays);
   state = validateState(state);
   if (!ui.demo) { const ok = saveState(state); notice = ok ? (notice === 'unsaved' ? '' : notice) : 'unsaved'; changedHere(); }
@@ -153,10 +166,15 @@ let syncTimer = null, syncing = false;
 const CLOUD_ERRORS = {offline: 'אין חיבור לאינטרנט.', 'too-many': 'כבר שלחנו קוד לפני רגע. הקוד מהמייל האחרון עובד, ואפשר לבקש חדש בעוד דקה.',
   'bad-code': 'הקוד לא נכון או שפג תוקפו. אפשר לבקש קוד חדש.', 'provider-off': 'הכניסה עם Google עוד לא מופעלת.', failed: 'משהו השתבש. אפשר לנסות שוב.'};
 const cloudError = e => CLOUD_ERRORS[e?.code] || CLOUD_ERRORS.failed;
-function changedHere() { cloud.setSyncInfo({editedAt: Date.now()}); if (cloud.user) { clearTimeout(syncTimer); syncTimer = setTimeout(syncNow, 2000); } }
+// Every change here is counted, so a sync can tell whether something changed while it was sending.
+function changedHere() {
+  const info = cloud.syncInfo();
+  cloud.setSyncInfo({dirty: true, rev: (info.rev || 0) + 1, editedAt: Date.now()});
+  if (cloud.user) { clearTimeout(syncTimer); syncTimer = setTimeout(syncNow, 2000); }
+}
 function setSync(status, at = ui.sync.at) {
   ui.sync = {status, at};
-  if (sheet.open && sheet.querySelector('.sync-line')) sheet.querySelector('.sheet-page').innerHTML = accountSheet(cloud.user, {sync: ui.sync});
+  if (sheet.open && sheet.querySelector('.sync-line')) sheet.querySelector('.sheet-page').innerHTML = accountSheet(cloud.user, {sync: ui.sync, backupAt: readBackup()?.at});
 }
 // ── The guided tour ──
 // Right after the first-time questions it runs on the sample planner, so each screen has something to show;
@@ -222,55 +240,77 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight') tourLayer.querySelector('[data-action="tour-prev"]')?.click();
 });
 
+// Nothing of the previous person stays: their planner, the copies kept aside, and where their sync stood.
 function wipeDevice() {
   state = createState(); saveState(state); undoState = null; ui.firstSync = false; ui.obStep = '';
-  try { localStorage.removeItem('studyflow.cloud.backup'); } catch { /* nothing kept */ }
+  cloud.setSyncInfo({dirty: false, rev: 0, syncedAt: 0, editedAt: 0});
+  for (const key of ['studyflow.cloud.backup', 'studyflow.v1.backup', 'studyflow.v2.unreadable', 'studyflow.fresh.v1', 'studyflow.jar.seen']) {
+    try { localStorage.removeItem(key); } catch { /* nothing kept */ }
+  }
 }
 async function signOutNow() {
   await cloud.signOut(); wipeDevice(); ui.sync = {status: '', at: 0}; ui.gate = {};
   close(); location.hash = 'today'; render();
 }
+// The copy not chosen when two copies first meet, kept on the device; "החשבון שלי" can join it back in.
 const keepBackup = copy => { try { localStorage.setItem('studyflow.cloud.backup', JSON.stringify({at: Date.now(), state: copy})); } catch { /* best effort */ } };
+const readBackup = () => { try { return JSON.parse(localStorage.getItem('studyflow.cloud.backup') || 'null'); } catch { return null; } };
+// The planner the person works on: while the sample or the tour is on show, that is the one put aside.
+const own = () => ui.demo ? saved : state;
+function setOwn(next) { if (ui.demo) saved = next; else { state = next; undoState = null; } saveState(next); }
 function useRemote(remote) {
-  const at = Date.parse(remote.edited_at);
-  try { state = validateState(remote.state); } catch { return false; }
-  saveState(state); undoState = null; cloud.setSyncInfo({editedAt: at, syncedAt: at}); render();
+  try { setOwn(validateState(remote.state)); } catch { return false; }
+  cloud.setSyncInfo({syncedAt: Date.parse(remote.edited_at), dirty: false}); render();
   return true;
 }
+// One round: compare with the account, then take, send or join. What it sends is a snapshot taken before any waiting,
+// so a sample put on show meanwhile is never sent; a change made while it waits is noticed by the edit count and
+// sent by another round, never marked as sent.
+let syncAgain = false;
 async function syncNow() {
-  if (!cloud.user || ui.demo || syncing) return;
-  syncing = true; setSync('syncing');
+  if (!cloud.user) return;
+  if (syncing) { syncAgain = true; return; }
+  if (ui.demo) return; // the sample is on show; its end syncs again
+  syncing = true; syncAgain = false; setSync('syncing');
   try {
     if (cloud.syncInfo().userId && cloud.syncInfo().userId !== cloud.user.id) wipeDevice();
     cloud.setSyncInfo({userId: cloud.user.id});
-    const info = cloud.syncInfo(), editedAt = info.editedAt || 0;
+    const info = cloud.syncInfo(), rev = info.rev || 0, mine = clone(state);
+    const changedMeanwhile = () => (cloud.syncInfo().rev || 0) !== rev;
     let remote = await cloud.peek();
-    const step = decide({editedAt, syncedAt: info.syncedAt || 0, empty: isEmpty(state)}, remote);
-    // The planner itself is fetched only when it is needed: to take it, to choose, or to keep it as a backup.
-    if (['pull', 'pull-keep-other', 'ask', 'push-keep-other'].includes(step)) remote = await cloud.pull();
+    const step = decide({dirty: isDirty(info), syncedAt: info.syncedAt || 0, empty: isEmpty(mine)}, remote);
+    // The planner itself is fetched only when it is needed: to take it, to join it, or to choose.
+    if (['pull', 'merge', 'ask'].includes(step)) remote = await cloud.pull();
     if (step === 'ask') { setSync(''); ui.firstSync = true; render(); ui.pending = {remote}; open(chooseCopySheet(new Date(remote.edited_at).toLocaleDateString('he-IL'))); return; }
-    if (step.startsWith('pull')) { if (step === 'pull-keep-other') keepBackup(state); useRemote(remote); }
-    if (step.startsWith('push')) {
-      if (step === 'push-keep-other') keepBackup(remote.state);
-      const at = editedAt || Date.now();
-      await cloud.push(state, at);
-      cloud.setSyncInfo({editedAt: at, syncedAt: at});
+    if (step === 'pull') { if (changedMeanwhile()) syncAgain = true; else useRemote(remote); }
+    if (step === 'push' || step === 'merge') {
+      // Joining: the account's copy and everything here now (changes made while waiting included) become one.
+      const next = step === 'merge' ? mergeStates(own(), remote.state) : mine, joinedAt = cloud.syncInfo().rev || 0;
+      if (step === 'merge') { setOwn(next); render(); }
+      const at = Date.now();
+      await cloud.push(next, at);
+      const changedSince = (cloud.syncInfo().rev || 0) !== (step === 'merge' ? joinedAt : rev);
+      cloud.setSyncInfo({syncedAt: at, dirty: changedSince});
+      if (changedSince) syncAgain = true;
+      if (step === 'merge') toast('היו שינויים גם כאן וגם במכשיר אחר. שילבנו את שניהם, ושום דבר לא נמחק.');
     }
-    if (step === 'same') cloud.setSyncInfo({syncedAt: Date.parse(remote.edited_at)});
     setSync('', cloud.syncInfo().syncedAt || Date.now());
     if (!ui.firstSync) { ui.firstSync = true; ui.loadError = false; render(); }
-    if (step.endsWith('keep-other')) toast('היו שינויים גם כאן וגם במכשיר אחר. נשמר החדש, והשני נשמר כגיבוי במכשיר.');
   } catch (e) {
     setSync({offline: 'offline', 'no-table': 'setup', 'signed-out': ''}[e.code] ?? 'error');
     if (!ui.firstSync) { ui.loadError = true; render(); }
     if (e.code === 'signed-out') render();
-  } finally { syncing = false; }
+  } finally {
+    syncing = false;
+    if (syncAgain) { syncAgain = false; setTimeout(syncNow, 300); }
+  }
 }
 // Coming back from the sign-in email's link (or Google), the address carries the sign-in; it is taken and the address cleaned.
 const redirect = cloud.takeRedirect(location.hash);
 if (redirect) {
   history.replaceState(null, '', `${location.pathname}#today`);
-  if (redirect === 'expired') setTimeout(() => toast('קישור הכניסה כבר לא בתוקף. אפשר לבקש חדש ב"החשבון שלי".'), 300);
+  if (redirect === 'expired') setTimeout(() => toast('קישור הכניסה כבר לא בתוקף. אפשר לבקש קוד חדש.'), 300);
+  else if (redirect === 'unasked') setTimeout(() => toast('הגעת מקישור כניסה שלא התבקש מהמכשיר הזה, אז לא נכנסנו איתו. נכנסים כרגיל, עם Google או קוד במייל.'), 300);
   else { ui.signingIn = true; cloud.loadUser().then(() => syncNow(), () => {}).finally(() => { ui.signingIn = false; render(); }); }
 }
 window.addEventListener('online', () => syncNow());
@@ -457,7 +497,7 @@ function useFreed(classId, date, n) {
   const {slot} = idea;
   if (idea.kind === 'shift') return open(shiftForm(state, {date: slot.date, start: slot.start, end: slot.end}));
   mutate(() => {
-    if (idea.kind === 'move') Object.assign(state.items.find(i => i.id === idea.id), {date: slot.date, start: slot.start, end: slot.end, done: false});
+    if (idea.kind === 'move') { const it = state.items.find(i => i.id === idea.id); if (it) moveItem(it, {date: slot.date, start: slot.start, end: slot.end}); }
     else state.items.push({id: uid(), title: idea.title, kind: idea.kind, date: slot.date, start: slot.start, end: slot.end, done: false, fixed: false,
       ...(idea.courseId ? {courseId: idea.courseId} : {}), ...(idea.goalId ? {goalId: idea.goalId} : {})});
   }, `נכנס לזמן שהתפנה: ${slot.start}–${slot.end}.`);
@@ -475,11 +515,21 @@ function toggleDone(id) {
     if (it.done) {
       if (course && minutes) course.studyLog.push({date: it.date, minutes});
       if (g) g.log.push({id: uid(), date: it.date, amount: amountForSession(g, minutes), itemId: it.id});
-    } else {
-      if (course) { const n = course.studyLog.findIndex(l => l.date === it.date && l.minutes === minutes); if (n >= 0) course.studyLog.splice(n, 1); }
-      if (g) g.log = g.log.filter(l => l.itemId !== it.id);
-    }
+    } else unlogDone(it);
   }, item.done ? 'סומן כלא בוצע.' : 'כל הכבוד!');
+}
+// What a finished item added to its course's study time and its goal comes off when it is no longer done:
+// unticked, or moved to another time (a moved item is to be done again, and must not count twice).
+function unlogDone(it) {
+  const minutes = it.allDay ? 0 : toMin(it.end) - toMin(it.start);
+  const course = state.courses.find(c => c.id === it.courseId), g = state.goals.find(x => x.id === it.goalId);
+  if (course) { const n = course.studyLog.findIndex(l => l.date === it.date && l.minutes === minutes); if (n >= 0) course.studyLog.splice(n, 1); }
+  if (g) g.log = g.log.filter(l => l.itemId !== it.id);
+}
+// Moving keeps the item and its length; a finished one starts over as not done.
+function moveItem(item, to) {
+  if (item.done) unlogDone(item);
+  Object.assign(item, to, {done: false});
 }
 
 function moveOptions(item) {
@@ -566,11 +616,15 @@ document.addEventListener('click', event => {
     'toggle-done': () => toggleDone(id),
     'delete-item': () => mutate(() => { state.items = state.items.filter(i => i.id !== id); for (const g of state.goals) g.log = g.log.filter(l => l.itemId !== id); }, 'נמחק.'),
     'move-item': () => { const item = state.items.find(i => i.id === id); if (!item) return; ui.pending = {move: item.id, options: moveOptions(item)}; open(moveForm(item, ui.pending.options)); },
-    'move-to': () => { const o = ui.pending.options[Number(t.dataset.n)], itemId = ui.pending.move; close(); mutate(() => Object.assign(state.items.find(i => i.id === itemId), {date: o.date, start: o.start, end: o.end, done: false}), `הוזז ל־${o.start}.`); },
+    'move-to': () => {
+      const o = ui.pending?.options[Number(t.dataset.n)], item = state.items.find(i => i.id === ui.pending?.move); close();
+      if (!o || !item) return toast('הפריט כבר לא נמצא.');
+      mutate(() => moveItem(item, {date: o.date, start: o.start, end: o.end}), `הוזז ל־${o.start}.`);
+    },
     'demo': () => { saved = clone(state); state = demoState(); ui.demo = true; render(); },
     'exit-demo': () => { state = saved || state; saved = null; ui.demo = false; undoState = null; render(); syncNow(); },
     // Account
-    'account': () => open(accountSheet(cloud.user, {codeFor: cloud.user ? '' : ui.loginEmail || '', sync: ui.sync})),
+    'account': () => open(accountSheet(cloud.user, {codeFor: cloud.user ? '' : ui.loginEmail || '', sync: ui.sync, backupAt: readBackup()?.at})),
     'account-other': () => { ui.loginEmail = ''; open(accountSheet(null)); },
     'resend-code': () => cloud.sendCode(ui.loginEmail).then(() => toast('שלחנו מייל חדש.'), e => toast(cloudError(e))),
     'google': () => { if (mustAgree()) return; location.href = cloud.googleUrl(`${location.origin}${location.pathname}`); },
@@ -584,8 +638,10 @@ document.addEventListener('click', event => {
     'sign-out-anyway': () => signOutNow(),
     'delete-account': () => open(deleteAccountSheet()),
     'confirm-delete-account': () => { t.disabled = true; cloud.deleteAccount().then(() => { wipeDevice(); ui.sync = {status: '', at: 0}; ui.gate = {}; close(); location.hash = 'today'; render(); },  e => { t.disabled = false; toast(cloudError(e)); }); },
-    'use-cloud': () => { const remote = ui.pending?.remote; close(); if (remote) { keepBackup(state); useRemote(remote); setSync('', Date.parse(remote.edited_at)); toast('עברת למה שבחשבון. מה שהיה במכשיר נשמר כגיבוי.'); } },
-    'use-device': () => { const remote = ui.pending?.remote; close(); if (remote) { keepBackup(remote.state); cloud.setSyncInfo({editedAt: Date.now(), syncedAt: Date.parse(remote.edited_at)}); syncNow(); } },
+    'use-cloud': () => { const remote = ui.pending?.remote; close(); if (remote) { keepBackup(state); useRemote(remote); setSync('', Date.parse(remote.edited_at)); toast('עברת למה שבחשבון. מה שהיה במכשיר נשמר בצד, ואפשר לשלב אותו ב"החשבון שלי".'); } },
+    'use-device': () => { const remote = ui.pending?.remote; close(); if (remote) { keepBackup(remote.state); cloud.setSyncInfo({syncedAt: Date.parse(remote.edited_at), dirty: true}); syncNow(); } },
+    // The copy put aside when two copies first met: joined into this one, nothing in either is lost.
+    'merge-backup': () => { const b = readBackup(); if (!b?.state) return; close(); mutate(() => { state = mergeStates(state, b.state); }, 'העותק שנשמר בצד שולב בתכנון.'); try { localStorage.removeItem('studyflow.cloud.backup'); } catch { /* kept */ } },
     // The way in
     'gate-other': () => { ui.gate = {}; render(); },
     'gate-resend': () => cloud.sendCode(ui.gate.email).then(() => toast('שלחנו מייל חדש.'), e => { ui.gate = {...ui.gate, error: cloudError(e)}; render(); }),
@@ -793,7 +849,7 @@ document.addEventListener('submit', event => {
         const c = state.courses.find(x => x.id === form.dataset.id), titles = new Set(c.topics.map(t => t.title));
         c.topics.push(...topics.filter(t => !titles.has(t)).map(title => ({id: uid(), title, status: 'new'})));
         c.deadlines.push(...deadlines.map(d => ({id: uid(), ...d, done: false})));
-      }, `נוספו ${topics.length} נושאים${deadlines.length ? ` ו־${deadlines.length} מועדים` : ''}.`);
+      }, `${topics.length === 1 ? 'נוסף נושא אחד' : `נוספו ${topics.length} נושאים`}${deadlines.length === 1 ? ' ומועד אחד' : deadlines.length ? ` ו־${deadlines.length} מועדים` : ''}.`);
     }
     if (kind === 'deadline') {
       const title = get('title'), date = get('date');
@@ -828,7 +884,7 @@ document.addEventListener('submit', event => {
       if (hits.length && !overlapOK(form)) return askOverlap(form, [...new Set(hits.map(h => h.title))]);
       const note = get('note');
       close();
-      mutate(() => Object.assign(item, {date, start, end, done: false}, note ? {note} : {}), `הוזז ל־${start}.`);
+      mutate(() => moveItem(item, {date, start, end, ...(note ? {note} : {})}), `הוזז ל־${start}.`);
     }
     if (kind === 'money-goal') {
       const amount = Number(get('amount')) || 0;

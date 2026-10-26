@@ -2,7 +2,7 @@
 // "מחר ללמוד שעתיים סטטיסטיקה, לסיים עבודה של שעה וחצי, להתאמן ויש לי בערב ארוחה"
 // → four items: two with a length (placed in free time), a gym session, and a dinner at a fixed evening time.
 // Anything the rules could not know is flagged in `needs`, so the review card asks instead of guessing silently.
-import {localDate, addDays, weekday, toClock, toMin} from './util.mjs';
+import {localDate, addDays, weekday, toClock, toMin, validDate} from './util.mjs';
 
 const DAYS = {'ראשון': 0, 'שני': 1, 'שלישי': 2, 'רביעי': 3, 'חמישי': 4, 'שישי': 5, 'שבת': 6};
 const DAY_RE = 'ראשון|שני|שלישי|רביעי|חמישי|שישי|שבת';
@@ -49,12 +49,13 @@ function splitByStarters(part) {
   return parts;
 }
 
-// Splits "X, Y ויש לי Z" into parts, without breaking "שעה וחצי" or "מ10 ועד 12".
+// Splits "X, Y ויש לי Z" into parts, without breaking "שעה וחצי", "מ10 ועד 12", a date "12.11" or "1.5 שעות":
+// a full stop ends a part only when it is not between two digits.
 export function splitParts(sentence) {
   return normalize(sentence)
     .replace(/\s+(?:ואז|אחר כך|אחרי זה|וגם)\s+/g, ' | ')
     .replace(/\s+ו(?=(?:ל|יש|אחר|גם|אני|צריך|רוצה|בערב|בבוקר|בצהריים|מחר)\S*)/g, ' | ')
-    .split(/[|,;\n.]+/).map(p => p.trim()).filter(p => p.length > 1)
+    .split(/[|,;\n]+|(?<!\d)\.|\.(?!\d)/).map(p => p.trim()).filter(p => p.length > 1)
     .flatMap(splitByStarters);
 }
 
@@ -95,14 +96,17 @@ export function parsePart(raw, context, now) {
   take(new RegExp(`\\sעד\\s+(?:ל|ה)?(?:(?:יום\\s+)?(${DAY_RE})|(מחרתיים|מחר))(?=\\s)`, 'g'), m => {
     out.deadline = m[1] ? nextDay(today, DAYS[m[1]], false) : addDays(today, m[2] === 'מחר' ? 1 : 2);
   });
+  // "כל היום" is a whole day, not "today": taken before the day words read "היום" as a date.
+  if (/\sכל היום(?=\s)/.test(text)) { out.allDay = true; take(/\sכל היום(?=\s)/g, () => {}); }
   const nextWeek = /\s(?:ב?שבוע הבא)(?=\s)/.test(text);
   take(/\s(?:ב?שבוע הבא)(?=\s)/g, () => {});
   take(/\s(?:ל|ב)?(מחרתיים|מחר|היום)(?=\s)/g, m => { out.date = addDays(today, {'היום': 0, 'מחר': 1, 'מחרתיים': 2}[m[1]]); });
   take(new RegExp(`\\s(?:ב?יום\\s+|ב)(${DAY_RE})(\\s+(?:הבא|הקרוב|הזה))?(?=\\s)`, 'g'), m => { out.date = nextDay(today, DAYS[m[1]], nextWeek || /הבא/.test(m[2] || '')); });
-  take(/\s(?:ב-?|ה-?)?(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?(?=\s)/g, m => { out.date = dayMonth(today, Number(m[1]), Number(m[2]), m[3]); });
-  take(new RegExp(`\\s(?:ב-?|ה-?)?(\\d{1,2})\\s*(?:ב|ל)-?(${Object.keys(MONTHS).join('|')})(?=\\s)`, 'g'), m => { out.date = dayMonth(today, Number(m[1]), MONTHS[m[2]]); });
+  // A date that does not exist (31.11) is not guessed: the day is asked instead. "1.5 שעות" is a length, not a date.
+  const setDate = d => { if (d) out.date = d; else out.badDate = true; };
+  take(/\s(?:ב-?|ה-?)?(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?(?=\s)(?!\s+(?:שעות|שעה|דקות|דק))/g, m => setDate(dayMonth(today, Number(m[1]), Number(m[2]), m[3])));
+  take(new RegExp(`\\s(?:ב-?|ה-?)?(\\d{1,2})\\s*(?:ב|ל)-?(${Object.keys(MONTHS).join('|')})(?=\\s)`, 'g'), m => setDate(dayMonth(today, Number(m[1]), MONTHS[m[2]])));
   if (!out.date && nextWeek && !out.dates) out.date = addDays(today, 7 - weekday(today));
-  if (/\sכל היום(?=\s)/.test(text)) { out.allDay = true; take(/\sכל היום(?=\s)/g, () => {}); }
 
   // Length: "שעתיים", "שעה וחצי", "3 שעות", "45 דקות", "חצי שעה".
   take(/\s(?:במשך\s+|של\s+|ל)?(?:(\d+(?:\.\d)?)\s+שעות(\s+וחצי)?|שעתיים(\s+וחצי)?|שעה(\s+וחצי|\s+ורבע)?(?!\s*-?\d)|חצי שעה|רבע שעה|(\d+)\s+דק(?:ות|')?)(?=\s)/g, m => {
@@ -153,15 +157,20 @@ export function parsePart(raw, context, now) {
     title = STUDY_WORDS.test(plain) ? `${plain.match(STUDY_WORDS)[1]} ${course.name}` : title;
   } else if (goal) { out.goalId = goal.id; out.kind = 'goal'; }
   out.title = title || raw.trim();
-  out.kind ||= EVENT_WORDS.test(plain) ? 'event' : STUDY_WORDS.test(plain) ? 'study' : TASK_WORDS.test(plain) ? 'task' : 'other';
+  // The word that comes first decides: "לקנות מתנה ליום הולדת" is a task, "לסכם הרצאה" is study, "פגישה עם המנחה" an event.
+  const at = re => { const m = re.exec(plain); return m ? m.index : Infinity; };
+  const first = [['event', at(EVENT_WORDS)], ['study', at(STUDY_WORDS)], ['task', at(TASK_WORDS)]].filter(([, i]) => i < Infinity).sort((a, b) => a[1] - b[1])[0];
+  out.kind ||= first?.[0] || 'other';
   // "מ22 עד 6": only a shift may run past midnight; anything else stops at the end of the day.
   if (out.start !== undefined && out.end !== undefined && out.end <= out.start) {
     if (out.kind === 'shift') out.overnight = true;
     else { out.end = Math.min(out.start + 60, 1439); out.needs.push('time'); }
   }
 
+  // A shift always has hours: "משמרת מראשון עד רביעי" is a shift on each of those days, never a whole day.
+  if (out.kind === 'shift') out.allDay = false;
   // Fixed (has its own time) or flexible (we find time for it).
-  if (out.allDay && out.kind !== 'shift') { out.fixed = true; delete out.start; delete out.end; }
+  if (out.allDay) { out.fixed = true; delete out.start; delete out.end; }
   else if (out.start !== undefined) {
     out.fixed = true;
     out.end ??= out.start + (out.minutes || 60);
@@ -176,8 +185,8 @@ export function parsePart(raw, context, now) {
     out.needs.push('time');
   } else {
     out.fixed = false;
+    // An event with no time said is asked "when?" (by parseTell), never "is this time right?" about a time that was never set.
     if (out.minutes === undefined) { out.minutes = goal?.sessionMinutes || 60; if (!goal) out.needs.push('minutes'); }
-    if (out.kind === 'event') out.needs.push('time');
   }
   return out;
 }
@@ -202,7 +211,7 @@ function dayMonth(today, day, month, year) {
   const pad = n => String(n).padStart(2, '0');
   let d = `${y}-${pad(month)}-${pad(day)}`;
   if (!year && d < today) d = `${y + 1}-${pad(month)}-${pad(day)}`;
-  return d;
+  return validDate(d) ? d : null;
 }
 
 // Main entry: a day said once ("מחר ...") carries to the following parts until another day is said.
@@ -216,12 +225,12 @@ export function parseTell(sentence, context = {courses: [], goals: []}, now = ne
     // Nothing is assumed silently: no day said (here or earlier in the sentence) → ask which day;
     // nothing said about when → ask whether to find a time, a part of the day, or a set hour.
     const needs = [...p.needs];
-    if (!daySaid && !p.dates && !p.deadline) needs.push('day');
+    if ((!daySaid || p.badDate) && !p.dates && !p.deadline) needs.push('day');
     if (!p.fixed && !p.allDay && !p.part && !p.deadline && !needs.includes('time')) needs.push('when');
     const base = {title: p.title.slice(0, 120), kind: p.kind, fixed: p.fixed, needs,
       ...(p.courseId ? {courseId: p.courseId} : {}), ...(p.goalId ? {goalId: p.goalId} : {}), ...(p.jobId ? {jobId: p.jobId} : {}), ...(p.part ? {part: p.part} : {})};
     if (p.allDay) for (const date of p.dates || [p.date || carried]) items.push({...base, date, allDay: true});
-    else items.push({...base, date: p.date || (p.deadline && !p.fixed ? today : carried), minutes: p.minutes,
+    else for (const date of p.dates || [p.date || (p.deadline && !p.fixed ? today : carried)]) items.push({...base, date, minutes: p.minutes,
       ...(p.deadline && !p.fixed ? {deadline: p.deadline} : {}),
       ...(p.fixed ? {start: toClock(p.start), end: toClock(p.end), ...(p.overnight ? {overnight: true} : {})} : {})});
   }

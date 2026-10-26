@@ -8,6 +8,8 @@ import {GOOGLE_SIGN_IN} from './config.mjs';
 const error = '<p class="form-error" role="alert" data-error></p>';
 const submit = label => `${error}<button class="primary submit-button" type="submit">${label}</button>`;
 const dayPicker = (selected = []) => `<fieldset class="off-days"><legend>באילו ימים?</legend>${DAY_SHORT.map((d, i) => `<label><input type="checkbox" name="days" value="${i}" ${selected.includes(i) ? 'checked' : ''}><span>${d}</span></label>`).join('')}</fieldset>`;
+// Names for the workplace colors, in the order of PALETTE, so a screen reader can tell them apart.
+const COLOR_NAMES = ['סגול', 'ירוק־כחול', 'כתום', 'ורוד', 'כחול', 'ירוק זית', 'חום', 'סגול כהה'];
 const chips = (name, items, value) => `<div class="choice-chips">${items.map(([v, t]) => `<label><input type="radio" name="${name}" value="${esc(v)}" ${String(v) === String(value) ? 'checked' : ''}><span>${t}</span></label>`).join('')}</div>`;
 
 export function classForm(state, c = {}, courseId = '') {
@@ -109,7 +111,7 @@ export function jobForm(j = {}, color = PALETTE[0]) {
     <label for="job-name">שם העסק</label><input id="job-name" name="name" maxlength="60" required autofocus value="${esc(j.name || '')}" placeholder="למשל, קפה רחביה">
     <label for="job-wage">כמה אתה מקבל לשעה?</label>
     <div class="money-input"><input id="job-wage" name="wage" type="number" inputmode="decimal" min="0" max="2000" step="0.01" required value="${j.wage ?? ''}" placeholder="38"><span>₪</span></div>
-    <fieldset><legend>הצבע שלו ביומן</legend><div class="color-picks">${PALETTE.map(c => `<label style="--c:${c}"><input type="radio" name="color" value="${c}" ${c === chosen ? 'checked' : ''} aria-label="צבע"><span></span></label>`).join('')}</div></fieldset>
+    <fieldset><legend>הצבע שלו ביומן</legend><div class="color-picks">${PALETTE.map((c, n) => `<label style="--c:${c}"><input type="radio" name="color" value="${c}" ${c === chosen ? 'checked' : ''} aria-label="${COLOR_NAMES[n] || 'צבע'}"><span></span></label>`).join('')}</div></fieldset>
     <details class="advanced"><summary>עוד פרטים</summary>
       <label class="repeat-option"><input type="checkbox" name="overtime" ${j.overtime !== false ? 'checked' : ''}> לחשב שעות נוספות במשמרת ארוכה</label>
     </details>
@@ -132,7 +134,7 @@ export function weekShiftsForm(state, jobId, sunday, times = {start: '16:00', en
     <p class="field-help">מסמנים באילו ימים עובדים, מראשון עד שישי.</p>
     <div class="week-rows">${days.map(d => `<div class="week-row${d < today ? ' is-past' : ''}" data-week-row>
       <label class="day-toggle"><input type="checkbox" name="day" value="${d}"><span><b>${esc(d === today ? 'היום' : `יום ${DAY_NAMES[new Date(`${d}T12:00:00`).getDay()]}`)}</b><small>${esc(dateLabel(d))}${d < today ? ' · עבר' : ''}</small></span></label>
-      <span class="week-times">${timeSelect(`name="start-${d}" aria-label="משעה"`, times.start)}<span>–</span>${timeSelect(`name="end-${d}" aria-label="עד שעה"`, times.end)}</span>
+      <span class="week-times">${timeSelect(`name="start-${d}" aria-label="יום ${DAY_NAMES[new Date(`${d}T12:00:00`).getDay()]}, משעה"`, times.start)}<span>–</span>${timeSelect(`name="end-${d}" aria-label="יום ${DAY_NAMES[new Date(`${d}T12:00:00`).getDay()]}, עד שעה"`, times.end)}</span>
     </div>`).join('')}</div>
     ${submit('להכניס ליומן')}
   </form>`;
@@ -225,16 +227,19 @@ export function settingsForm(prefs) {
   </details>`;
 }
 
-// The account: optional. Signed out it explains what it adds and signs in with a code by email;
-// signed in it shows where the copy stands and the way out (sign out, download, delete for good).
-export function accountSheet(user, {codeFor = '', sync = {}} = {}) {
+// The account: signed in it shows where the copy stands, a copy kept aside if there is one,
+// and the way out (sign out, download, delete for good).
+export function accountSheet(user, {codeFor = '', sync = {}, backupAt = 0} = {}) {
   if (user) {
+    const kept = backupAt ? `<section class="backup-note"><p>${icon('file')} יש עותק שנשמר בצד ב־${esc(new Date(backupAt).toLocaleDateString('he-IL'))}, כשבחרת בין המכשיר לחשבון.</p>
+      <button class="text-button" data-action="merge-backup">לשלב אותו בתכנון</button></section>` : '';
     const when = sync.at ? new Date(sync.at).toLocaleString('he-IL', {day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit'}) : '';
     const status = {syncing: 'מסנכרן…', offline: 'אין חיבור. השינויים יעלו כשיחזור האינטרנט.', error: 'הסנכרון נכשל. ננסה שוב בקרוב.',
       setup: 'השרת עוד לא מוכן לשמירה (צריך להריץ את קובץ ההגדרה ב-Supabase).'}[sync.status] || (when ? `נשמר בענן · ${when}` : 'עוד לא נשמר בענן.');
     return `${sheetTop('החשבון שלי')}
     <section class="account-card"><span class="account-avatar">${icon('user')}</span><div><b>${esc(user.email || 'מחובר')}</b><small class="sync-line${sync.status === 'error' || sync.status === 'setup' ? ' is-bad' : ''}">${icon('cloud')} ${esc(status)}</small></div></section>
     <button class="primary submit-button" data-action="sync-now">${icon('cloud')} לסנכרן עכשיו</button>
+    ${kept}
     <div class="account-actions">
       <button class="text-button" data-action="export">${icon('file')} הורדת המידע שלי</button>
       <button class="text-button" data-action="sign-out">להתנתק</button>
@@ -244,9 +249,9 @@ export function accountSheet(user, {codeFor = '', sync = {}} = {}) {
   }
   if (codeFor) {
     return `${sheetTop('בדוק את המייל')}
-    <p class="account-lead">שלחנו מייל ל־<b dir="ltr">${esc(codeFor)}</b>. לוחצים בו על הקישור, באותו מכשיר, ונכנסים מחוברים. הוא מגיע תוך דקה, וכדאי לבדוק גם בספאם.</p>
+    <p class="account-lead">שלחנו קוד ל־<b dir="ltr">${esc(codeFor)}</b>. הוא מגיע תוך דקה, וכדאי לבדוק גם בספאם.</p>
     <form data-form="verify-code">
-      <label for="login-code">יש במייל קוד? אפשר להקליד אותו כאן</label>
+      <label for="login-code">הקוד מהמייל</label>
       <input id="login-code" name="code" class="code-input" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,8}" maxlength="8" required autofocus dir="ltr">
       ${submit('כניסה')}
     </form>

@@ -42,7 +42,11 @@ export const money2 = n => { const a = Math.round(n * 100); return `${(a / 100).
 // A month ("2026-10") of work: per workplace and in total, split into done so far and still ahead.
 export function monthSummary(state, month, now = new Date()) {
   const today = localDate(now), nowMin = now.getHours() * 60 + now.getMinutes();
-  const isPast = s => s.date < today || (s.date === today && toMin(s.start) + shiftMinutes(s) <= nowMin);
+  // Over when its real end has passed: a night shift from yesterday is still running until its morning end.
+  const isPast = s => {
+    const end = toMin(s.start) + shiftMinutes(s), endDate = end > 1440 ? addDays(s.date, 1) : s.date, endMin = end > 1440 ? end - 1440 : end;
+    return endDate < today || (endDate === today && endMin <= nowMin);
+  };
   const shifts = state.shifts.filter(s => s.date.slice(0, 7) === month).sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start));
   const jobs = state.jobs.map(job => {
     const own = shifts.filter(s => s.jobId === job.id).map(s => ({...s, ...shiftPay(s, job), past: isPast(s)}));

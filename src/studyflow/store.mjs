@@ -9,7 +9,8 @@ export const BACKUP_KEY = 'studyflow.v1.backup';
 export const UNREADABLE_KEY = 'studyflow.v2.unreadable';
 
 const text = (value, max = 120) => typeof value === 'string' ? value.trim().slice(0, max) : '';
-const list = (value, max) => (Array.isArray(value) ? value : []).slice(0, max);
+// At a limit the newest are kept: new things are added at the end, and must never be the ones dropped.
+const list = (value, max) => (Array.isArray(value) ? value : []).slice(-max);
 const pick = (value, options, fallback) => options.includes(value) ? value : fallback;
 const number = (value, fallback, min, max) => Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
 const days = value => [...new Set(list(value, 7).filter(d => Number.isInteger(d) && d >= 0 && d <= 6))].sort();
@@ -85,6 +86,24 @@ export function validateState(value) {
     moneyGoal: Math.round(number(p?.moneyGoal, 0, 0, 1000000)), moneyFor: text(p?.moneyFor, 40),
     activeDays: [...new Set(list(p?.activeDays, 1000).filter(validDate))].sort().slice(-400)};
   return state;
+}
+
+// Two copies that both changed (a phone offline on the bus, the laptop at home): nothing either side added is lost.
+// Records are joined by id; where both have the same record, this device's version is kept, and what each side
+// logged inside it (goal sessions, topics, deadlines, cancelled dates) is joined too. Something deleted on only
+// one side comes back: better than losing something added.
+export function mergeStates(mine, theirs) {
+  const a = validateState(mine), b = validateState(theirs);
+  const join = (x = [], y = []) => { const ids = new Set(x.map(i => i.id)); return [...x, ...y.filter(i => !ids.has(i.id))]; };
+  const same = (list, id) => list.find(i => i.id === id);
+  const out = {...a};
+  for (const k of ['classes', 'items', 'courses', 'goals', 'jobs', 'shifts']) out[k] = join(a[k], b[k]);
+  out.goals = out.goals.map(g => { const t = same(b.goals, g.id); return t ? {...g, log: join(g.log, t.log)} : g; });
+  out.classes = out.classes.map(c => { const t = same(b.classes, c.id); return t ? {...c, skipDates: [...new Set([...c.skipDates, ...t.skipDates])]} : c; });
+  out.courses = out.courses.map(c => { const t = same(b.courses, c.id); return t ? {...c, topics: join(c.topics, t.topics), deadlines: join(c.deadlines, t.deadlines)} : c; });
+  out.profile = {...a.profile, onboarded: a.profile.onboarded || b.profile.onboarded,
+    tips: [...new Set([...a.profile.tips, ...b.profile.tips])], activeDays: [...new Set([...a.profile.activeDays, ...b.profile.activeDays])].sort()};
+  return validateState(out);
 }
 
 // Version 1 planned weeks automatically. Courses, fixed commitments and personal goals carry over;

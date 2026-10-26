@@ -703,7 +703,13 @@ body.gated{overflow:hidden}
 .slot.overlap-ok{background:var(--warm);color:var(--warm-ink);font-weight:600}
 .proposal-status.ok .proposal-note{width:100%;margin-top:8px;padding:8px 12px;border:1.5px solid var(--line);border-radius:10px;font:inherit;font-size:14px;background:#fffef9}
 
-/* Phone: no accidental zoom (double-tap or tapping into a text box) */
+/* A copy kept aside when two copies met, ready to be joined back */
+.backup-note{display:grid;gap:4px;margin:12px 0;padding:12px 14px;border-radius:12px;background:var(--warm);color:var(--warm-ink);font-size:14px;line-height:1.55}
+.backup-note p{display:flex;gap:8px;align-items:flex-start}
+.backup-note .icon{width:18px;height:18px;flex:none;margin-top:2px}
+.backup-note .text-button{justify-self:start;font-weight:700}
+
+/* Phone: no accidental zoom (double-tap or tapping into a text box); pinching to zoom still works */
 html{touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%}
 input,select,textarea{font-size:max(16px,1em)}
 

@@ -1,16 +1,19 @@
-// The account and the cloud copy. Signing in is optional: the planner keeps working on the device without it,
-// and an account adds one saved copy per person, so a new phone gets everything back.
-// Sign-in is a one-time code by email (Google once it is switched on). Talks to Supabase over plain fetch.
+// The account and the cloud copy: one saved copy per person, so every phone or computer they sign in on has everything.
+// The device copy is the one the app works on; the account follows it. Sign-in is Google or a one-time code by email.
+// Talks to Supabase over plain fetch.
 import {SUPABASE_URL, SUPABASE_KEY} from './config.mjs';
 
-const SESSION_KEY = 'studyflow.session', SYNC_KEY = 'studyflow.sync';
+const SESSION_KEY = 'studyflow.session', SYNC_KEY = 'studyflow.sync', SIGNIN_KEY = 'studyflow.signin';
+// A sign-in arriving in the address is taken only if this browser asked for one in the last hour,
+// so a link someone else sends cannot sign a person into a stranger's account.
+const SIGNIN_WINDOW = 60 * 60 * 1000;
 const read = (storage, key) => { try { return JSON.parse(storage?.getItem(key) || 'null'); } catch { return null; } };
 const write = (storage, key, value) => {
   try { if (value === null) storage?.removeItem(key); else storage?.setItem(key, JSON.stringify(value)); } catch { /* a private window: sign-in lasts until it closes */ }
 };
 
 export class CloudError extends Error {
-  constructor(code, detail = '') { super(code); this.code = code; this.detail = detail; }
+  constructor(code, detail = '', status = 0) { super(code); this.code = code; this.detail = detail; this.status = status; }
 }
 // The few things a person needs told apart; everything else is "something went wrong".
 function codeOf(status, data) {
@@ -28,12 +31,14 @@ export function createCloud({url = SUPABASE_URL, key = SUPABASE_KEY, storage = g
   fetchFn = globalThis.fetch?.bind(globalThis), now = () => Date.now()} = {}) {
   let session = read(storage, SESSION_KEY);
 
-  const keep = s => {
+  // A new sign-in never borrows the person of the one before it; a renewal of the same sign-in keeps them.
+  const keep = (s, {renewal = false} = {}) => {
     session = s ? {access_token: s.access_token, refresh_token: s.refresh_token,
       expires_at: s.expires_at || Math.floor(now() / 1000) + (Number(s.expires_in) || 3600),
-      user: s.user?.id ? {id: s.user.id, email: s.user.email || ''} : session?.user || null} : null;
+      user: s.user?.id ? {id: s.user.id, email: s.user.email || ''} : renewal ? session?.user || null : null} : null;
     write(storage, SESSION_KEY, session);
   };
+  const askedToSignIn = () => { const at = Number(read(storage, SIGNIN_KEY)) || 0; return at && now() - at < SIGNIN_WINDOW; };
 
   async function call(path, {method = 'GET', body, auth = false, headers = {}} = {}) {
     const h = {apikey: key, 'Content-Type': 'application/json', ...headers};
@@ -49,19 +54,20 @@ export function createCloud({url = SUPABASE_URL, key = SUPABASE_KEY, storage = g
     let data = null; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
     if (!res.ok) {
       if (auth && res.status === 401) keep(null); // the sign-in was revoked or is no longer valid: sign in again
-      throw new CloudError(codeOf(res.status, data), data);
+      throw new CloudError(codeOf(res.status, data), data, res.status);
     }
     return data;
   }
 
-  // A sign-in lasts an hour and renews itself; a renewal the server refuses means signing in again.
+  // A sign-in lasts an hour and renews itself. Only a renewal the server refuses (400/401/403) means signing in again;
+  // no connection, a server hiccup or a Wi-Fi login page keeps the sign-in for the next try.
   async function accessToken() {
     if (!session?.access_token) return null;
     if (session.expires_at - 60 > now() / 1000) return session.access_token;
     try {
-      keep(await call('/auth/v1/token?grant_type=refresh_token', {method: 'POST', body: {refresh_token: session.refresh_token}}));
+      keep(await call('/auth/v1/token?grant_type=refresh_token', {method: 'POST', body: {refresh_token: session.refresh_token}}), {renewal: true});
     } catch (e) {
-      if (e.code !== 'offline') keep(null);
+      if ([400, 401, 403].includes(e.status)) keep(null);
       throw e;
     }
     return session.access_token;
@@ -71,25 +77,28 @@ export function createCloud({url = SUPABASE_URL, key = SUPABASE_KEY, storage = g
 
   return {
     get user() { return session?.user || null; },
-    sendCode: email => call('/auth/v1/otp', {method: 'POST', body: {email, create_user: true}}),
+    sendCode(email) { write(storage, SIGNIN_KEY, now()); return call('/auth/v1/otp', {method: 'POST', body: {email, create_user: true}}); },
     async verifyCode(email, token) {
       keep(await call('/auth/v1/verify', {method: 'POST', body: {type: 'email', email, token}}));
+      write(storage, SIGNIN_KEY, null);
       return session.user;
     },
-    googleUrl: redirectTo => `${url}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectTo)}`,
+    googleUrl(redirectTo) { write(storage, SIGNIN_KEY, now()); return `${url}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectTo)}`; },
     // Coming back from Google or from the link in the sign-in email, the address carries "#access_token=…&refresh_token=…",
-    // or "#error=…" when the link expired. Returns 'signed-in', 'expired' or false.
+    // or "#error=…" when the link expired. Returns 'signed-in', 'expired', 'unasked' (a sign-in this browser never asked for) or false.
     takeRedirect(hash) {
       const p = new URLSearchParams(String(hash).replace(/^#/, ''));
       if (p.get('error') || p.get('error_code')) return 'expired';
       if (!p.get('access_token')) return false;
+      if (!askedToSignIn()) return 'unasked';
+      write(storage, SIGNIN_KEY, null);
       keep({access_token: p.get('access_token'), refresh_token: p.get('refresh_token'),
         expires_in: p.get('expires_in'), expires_at: Number(p.get('expires_at')) || undefined});
       return 'signed-in';
     },
     async loadUser() {
       const user = await call('/auth/v1/user', {auth: true});
-      keep({...session, user});
+      keep({...session, user}, {renewal: true});
       return session.user;
     },
     async signOut() {
@@ -121,17 +130,20 @@ export function createCloud({url = SUPABASE_URL, key = SUPABASE_KEY, storage = g
 }
 
 // What to do when this device and the account may both have changed since they last matched.
-// editedAt: last change on this device; syncedAt: the account's version this device last matched (0 = never).
-export function decide({editedAt = 0, syncedAt = 0, empty = false} = {}, remote = null) {
-  if (!remote) return empty ? 'nothing' : 'push';
-  const remoteAt = Date.parse(remote.edited_at) || 0;
-  if (!syncedAt) return empty ? 'pull' : remoteAt === editedAt ? 'same' : 'ask';
-  const here = editedAt > syncedAt, there = remoteAt > syncedAt;
-  if (here && there) return editedAt >= remoteAt ? 'push-keep-other' : 'pull-keep-other';
+// dirty: something changed on this device since then; syncedAt: the version of the account this device last matched (0 = never).
+// No clocks are compared between devices: the account "changed" when its version is not the one this device last saw.
+// An empty device always takes the account (a new phone, or a device wiped when someone else signs in).
+export function decide({dirty = false, syncedAt = 0, empty = false} = {}, remote = null) {
+  if (!remote) return empty && !dirty ? 'nothing' : 'push';
+  if (empty && !dirty) return 'pull';
+  if (!syncedAt) return 'ask';
+  const there = (Date.parse(remote.edited_at) || 0) !== syncedAt;
+  if (dirty && there) return 'merge';
   if (there) return 'pull';
-  if (here) return 'push';
-  return 'same';
+  return dirty ? 'push' : 'same';
 }
+// Saves from before the edit count: a change after the last match is still a change.
+export const isDirty = info => info.dirty ?? ((info.editedAt || 0) > (info.syncedAt || 0));
 
 // Nothing worth keeping yet: a fresh install, before the first-time questions were answered or anything was added.
 export const isEmpty = s => !s?.profile?.onboarded && !['classes', 'items', 'courses', 'goals', 'jobs', 'shifts'].some(k => s?.[k]?.length);
