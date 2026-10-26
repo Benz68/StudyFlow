@@ -25,6 +25,20 @@ test('a calendar file becomes weekly classes and one-time events', () => {
   assert.deepEqual(once.map(o => o.title), ['פגישה עם המנחה'], 'cancelled and all-day events are left out');
 });
 
+test('every other week, a set number of meetings, and a class past midnight come in right', () => {
+  const event = (rule, start = '20261018T100000', end = '20261018T120000', title = 'תרגול') =>
+    `BEGIN:VEVENT\nSUMMARY:${title}\nDTSTART:${start}\nDTEND:${end}\nRRULE:${rule}\nEND:VEVENT`;
+  const file = `BEGIN:VCALENDAR\n${event('FREQ=WEEKLY;INTERVAL=2;BYDAY=SU;UNTIL=20261115T000000Z')}\n${event('FREQ=WEEKLY;COUNT=3;BYDAY=TU', '20261020T100000', '20261020T110000', 'מעבדה')}\n${event('FREQ=WEEKLY;BYDAY=WE', '20261021T230000', '20261022T003000', 'לילה')}\nEND:VCALENDAR`;
+  const [biweekly, three, late] = parseICS(file).classes;
+  assert.deepEqual([biweekly.from, biweekly.until, biweekly.skipDates], ['2026-10-18', '2026-11-15', ['2026-10-25', '2026-11-08']], 'meets on 18.10, 1.11 and 15.11');
+  assert.deepEqual([three.until, three.skipDates], ['2026-11-03', []], 'three Tuesdays: 20.10, 27.10, 3.11');
+  assert.deepEqual([late.start, late.end], ['23:00', '23:59'], 'kept, ending at the end of its day instead of being dropped');
+});
+
+test('a syllabus date that does not exist is not turned into another day', () => {
+  assert.deepEqual(readSyllabus('מבחן סופי 31.11', {today: '2026-10-16'}).deadlines, []);
+});
+
 test('lecture and tutorial of the same course share one course name', () => {
   assert.equal(courseNameOf('הרצאה - סטטיסטיקה א׳'), 'סטטיסטיקה א׳');
   assert.equal(courseNameOf('תרגול מיקרו'), 'מיקרו');

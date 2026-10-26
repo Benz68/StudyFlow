@@ -6,6 +6,32 @@ const now = new Date(2026, 9, 16, 9); // Friday 16.10.2026
 const ctx = {courses: [{id: 'stats', name: 'סטטיסטיקה'}, {id: 'micro', name: 'מבוא למיקרו'}], goals: [{id: 'gym', title: 'חדר כושר', sessionMinutes: 45}]};
 const one = (text, i = 0) => parseTell(text, ctx, now)[i];
 
+test('a dot inside a date or a number does not cut the sentence, and impossible dates are asked', () => {
+  const meeting = parseTell('פגישה ב-12.11 בשעה 10', ctx, now);
+  assert.deepEqual(meeting.map(i => [i.date, i.start]), [['2026-11-12', '10:00']]);
+  const study = parseTell('מחר ללמוד 1.5 שעות סטטיסטיקה. אחר כך לרוץ', ctx, now);
+  assert.deepEqual(study.map(i => i.minutes), [90, 60], 'one and a half hours, and the full stop still ends the first part');
+  const wrong = one('פגישה ב-31.11 בשעה 10');
+  assert.ok(wrong.needs.includes('day'), '31 November does not exist: which day is asked');
+});
+
+test('shifts over a range of days become one shift on each day', () => {
+  const jobs = {...ctx, jobs: [{id: 'cafe', name: 'קפה'}]};
+  const shifts = parseTell('משמרת מראשון עד רביעי מ16 עד 22', jobs, now);
+  assert.deepEqual(shifts.map(s => [s.kind, s.date, s.start, s.end, !!s.allDay]),
+    [['shift', '2026-10-18', '16:00', '22:00', false], ['shift', '2026-10-19', '16:00', '22:00', false], ['shift', '2026-10-20', '16:00', '22:00', false], ['shift', '2026-10-21', '16:00', '22:00', false]]);
+});
+
+test('"כל היום" is a whole day, and the first word decides what kind of thing it is', () => {
+  const reserve = one('בשבוע הבא ביום ראשון מילואים כל היום');
+  assert.deepEqual([reserve.title, reserve.allDay, reserve.date], ['מילואים', true, '2026-10-18']);
+  const gift = one('לקנות מתנה ליום הולדת של אמא');
+  assert.equal(gift.kind, 'task');
+  assert.ok(!gift.needs.includes('time') && gift.needs.includes('when'), 'asked when, not whether an unset time is right');
+  assert.equal(one('מחר לסכם הרצאה').kind, 'study');
+  assert.equal(one('מחר פגישה עם המנחה').kind, 'event');
+});
+
 test('the spec example becomes four items, with the day carried to every part', () => {
   const items = parseTell('מחר אני צריך ללמוד שעתיים לסטטיסטיקה, לסיים עבודה של שעה וחצי, להתאמן בחדר כושר ויש לי בערב ארוחה.', ctx, now);
   assert.deepEqual(items.map(i => i.title), ['ללמוד סטטיסטיקה', 'לסיים עבודה', 'להתאמן בחדר כושר', 'ארוחה']);

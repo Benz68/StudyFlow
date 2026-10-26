@@ -1,23 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createCloud, decide, isEmpty} from '../src/studyflow/cloud.mjs';
+import {createCloud, decide, isEmpty, isDirty} from '../src/studyflow/cloud.mjs';
 
 const memory = () => { const m = new Map(); return {getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k)}; };
 const reply = (status, body) => ({ok: status < 400, status, text: async () => (body === undefined ? '' : JSON.stringify(body))});
 const at = iso => Date.parse(iso);
 
-test('which copy wins: the device, the account, or ask', () => {
-  const remote = {edited_at: '2026-10-20T10:00:00Z'};
+test('which copy wins: the device, the account, both joined, or ask', () => {
+  const remote = {edited_at: '2026-10-20T10:00:00Z'}, synced = at('2026-10-20T10:00:00Z');
   assert.equal(decide({empty: true}, null), 'nothing', 'nothing here and nothing there');
-  assert.equal(decide({editedAt: 5}, null), 'push', 'first save to an empty account');
+  assert.equal(decide({dirty: true}, null), 'push', 'first save to an empty account');
   assert.equal(decide({empty: true}, remote), 'pull', 'a new phone takes the account');
-  assert.equal(decide({editedAt: at('2026-10-19T10:00:00Z')}, remote), 'ask', 'both have data and never met: the person chooses');
-  const synced = at('2026-10-20T10:00:00Z');
-  assert.equal(decide({editedAt: synced, syncedAt: synced}, remote), 'same');
-  assert.equal(decide({editedAt: synced + 1000, syncedAt: synced}, remote), 'push', 'changed only here');
-  assert.equal(decide({editedAt: synced - 5000, syncedAt: synced - 5000}, remote), 'pull', 'changed only on another device');
-  assert.equal(decide({editedAt: synced + 1000, syncedAt: synced - 5000}, remote), 'push-keep-other', 'both changed: the newer wins, the other is kept');
-  assert.equal(decide({editedAt: synced - 1000, syncedAt: synced - 5000}, remote), 'pull-keep-other');
+  assert.equal(decide({empty: true, syncedAt: synced + 99999}, remote), 'pull', 'a device wiped for someone else takes their account, whatever it matched before');
+  assert.equal(decide({dirty: true}, remote), 'ask', 'both have data and never met: the person chooses');
+  assert.equal(decide({syncedAt: synced}, remote), 'same');
+  assert.equal(decide({dirty: true, syncedAt: synced}, remote), 'push', 'changed only here');
+  assert.equal(decide({syncedAt: synced - 5000}, remote), 'pull', 'changed only on another device');
+  assert.equal(decide({dirty: true, syncedAt: synced - 5000}, remote), 'merge', 'both changed: joined, nothing lost');
+  assert.equal(decide({dirty: true, syncedAt: synced + 5000}, remote), 'merge', 'a phone clock ahead or behind changes nothing: versions are compared, not clocks');
+  assert.equal(isDirty({editedAt: 10, syncedAt: 5}), true, 'saves from before the edit count still know they changed');
+  assert.equal(isDirty({dirty: false, editedAt: 10, syncedAt: 5}), false);
   assert.equal(isEmpty({classes: [], items: [], courses: [], goals: [], jobs: [], shifts: []}), true);
   assert.equal(isEmpty({classes: [{}]}), false);
   assert.equal(isEmpty({classes: [], profile: {onboarded: true}}), false, 'someone who finished the first-time questions has something to keep, even with no classes yet');
@@ -59,11 +61,28 @@ test('errors a person can act on are told apart', async () => {
   assert.equal(code, 'offline');
 });
 
-test('coming back from the email link or Google signs in from the address', () => {
+test('coming back from the email link or Google signs in from the address, only when this browser asked', () => {
   const cloud = createCloud({url: 'https://x.supabase.co', key: 'k', storage: memory(), fetchFn: async () => reply(200, {})});
+  const back = '#access_token=t&refresh_token=r&expires_in=3600&token_type=bearer&type=magiclink';
   assert.equal(cloud.takeRedirect('#today'), false);
   assert.equal(cloud.takeRedirect('#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired'), 'expired');
+  assert.equal(cloud.takeRedirect(back), 'unasked', 'a link someone sent cannot sign this browser into their account');
   assert.equal(cloud.user, null);
-  assert.equal(cloud.takeRedirect('#access_token=t&refresh_token=r&expires_in=3600&token_type=bearer&type=magiclink'), 'signed-in');
   assert.ok(cloud.googleUrl('https://benz68.github.io/StudyFlow/').includes('provider=google&redirect_to=https%3A%2F%2Fbenz68.github.io'));
+  assert.equal(cloud.takeRedirect(back), 'signed-in');
+  assert.equal(cloud.user, null, 'the new sign-in never borrows the person of an earlier one');
+  assert.equal(cloud.takeRedirect(back), 'unasked', 'and the request is used once');
+});
+
+test('a server hiccup while renewing keeps the sign-in; a refused renewal ends it', async () => {
+  let clock = 1_000_000_000_000, answer = reply(503, {message: 'down'});
+  const storage = memory(), fetchFn = async url => url.includes('/verify') ? reply(200, {access_token: 'a', refresh_token: 'r', expires_in: 60, user: {id: 'u', email: 'a@b.co'}}) : answer;
+  const cloud = createCloud({url: 'https://x.supabase.co', key: 'k', storage, fetchFn, now: () => clock});
+  await cloud.verifyCode('a@b.co', '1');
+  clock += 3600 * 1000;
+  try { await cloud.pull(); } catch { /* expected */ }
+  assert.equal(cloud.user?.id, 'u', 'still signed in after a 503');
+  answer = reply(400, {error_code: 'refresh_token_not_found', msg: 'Invalid Refresh Token'});
+  try { await cloud.pull(); } catch { /* expected */ }
+  assert.equal(cloud.user, null, 'signed out after the server refused the renewal');
 });

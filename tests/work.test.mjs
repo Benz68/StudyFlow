@@ -41,6 +41,14 @@ test('a night shift blocks the evening and the next morning', () => {
   assert.ok(agenda.entries.some(e => e.type === 'shift' && e.continued));
 });
 
+test('a night shift from yesterday is still running until its morning end, counted once', () => {
+  const s = validateState({jobs: [{id: 'j', name: 'בר', wage: 40}], shifts: [{id: 'n', jobId: 'j', date: '2026-10-20', start: '22:00', end: '06:00'}]});
+  const during = monthSummary(s, '2026-10', new Date(2026, 9, 21, 3, 0));
+  assert.deepEqual([during.earned, !!during.ongoing], [0, true], 'at 3 at night: still running, not yet in the jar');
+  const after = monthSummary(s, '2026-10', new Date(2026, 9, 21, 7, 0));
+  assert.deepEqual([after.earned, !!after.ongoing], [320, false], 'after 6: in the jar once');
+});
+
 test('weekly shifts repeat on the same weekday', () => {
   assert.deepEqual(repeatDates('2026-10-18', 3), ['2026-10-18', '2026-10-25', '2026-11-01']);
 });

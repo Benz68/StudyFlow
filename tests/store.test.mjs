@@ -1,7 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {loadState, saveState, validateState, migrateV1, demoState, STORAGE_KEY, OLD_KEY, BACKUP_KEY, UNREADABLE_KEY} from '../src/studyflow/store.mjs';
+import {loadState, saveState, validateState, migrateV1, demoState, mergeStates, STORAGE_KEY, OLD_KEY, BACKUP_KEY, UNREADABLE_KEY} from '../src/studyflow/store.mjs';
 import {courseProgress, goalProgress, goalSummary} from '../src/studyflow/progress.mjs';
+
+test('two copies that both changed are joined: nothing either side added is lost', () => {
+  const base = {jobs: [{id: 'j', name: 'קפה', wage: 40}], goals: [{id: 'g', title: 'ריצה', target: 3, log: [{id: 'l1', date: '2026-10-20', amount: 1}]}],
+    classes: [{id: 'c', title: 'סטטיסטיקה', days: [0], start: '10:00', end: '12:00', skipDates: []}], profile: {onboarded: true, activeDays: ['2026-10-20']}};
+  const phone = validateState({...base, shifts: [{id: 's1', jobId: 'j', date: '2026-10-21', start: '16:00', end: '22:00'}],
+    goals: [{...base.goals[0], log: [...base.goals[0].log, {id: 'l2', date: '2026-10-21', amount: 1}]}], profile: {...base.profile, activeDays: ['2026-10-21']}});
+  const laptop = validateState({...base, items: [{id: 'i', title: 'להגיש תרגיל', date: '2026-10-22', start: '09:00', end: '10:00', kind: 'task'}],
+    classes: [{...base.classes[0], skipDates: ['2026-10-25']}]});
+  const joined = mergeStates(phone, laptop);
+  assert.deepEqual([joined.shifts.length, joined.items.length, joined.goals[0].log.length], [1, 1, 2]);
+  assert.deepEqual(joined.classes[0].skipDates, ['2026-10-25'], 'a class cancelled on the other device stays cancelled');
+  assert.deepEqual(joined.profile.activeDays, ['2026-10-20', '2026-10-21']);
+});
+
+test('at a size limit the newest records are kept, never the ones just added', () => {
+  const items = Array.from({length: 5001}, (_, n) => ({id: `i${n}`, title: 'x', date: '2026-10-20', start: '09:00', end: '10:00'}));
+  const kept = validateState({items}).items;
+  assert.equal(kept.length, 5000);
+  assert.equal(kept.at(-1).id, 'i5000', 'the last one added is there');
+});
 
 const memory = (initial = {}) => { const data = {...initial}; return {data, getItem: k => data[k] ?? null, setItem: (k, v) => { data[k] = String(v); }, removeItem: k => { delete data[k]; }}; };
 
