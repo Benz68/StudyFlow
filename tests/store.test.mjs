@@ -79,3 +79,12 @@ test('the profile: saves from before it existed skip the first-time questions, n
   assert.deepEqual(kept.profile, {name: 'דנה', areas: ['work'], onboarded: true, tips: ['work'], terms: '2026-10-24', moneyGoal: 0, moneyFor: '', activeDays: []});
   assert.equal(validateState({profile: {terms: 'yes'}}).profile.terms, '', 'only a real version date counts as agreeing');
 });
+test('the to-do list: kept until ticked, a tick keeps its day, and a tick on either device stays', () => {
+  const s = validateState({todos: [{id: 'a', title: ' להחזיר ספר '}, {id: 'b', title: 'מחברת', done: true, doneOn: '2026-10-27'}, {id: 'c', title: ''}, {id: 'd', title: 'x', doneOn: '2026-10-27'}]});
+  assert.deepEqual(s.todos, [{id: 'a', title: 'להחזיר ספר', done: false}, {id: 'b', title: 'מחברת', done: true, doneOn: '2026-10-27'}, {id: 'd', title: 'x', done: false}]);
+  assert.equal(validateState({todos: [{id: 't', title: 'x'}]}).profile.onboarded, true, 'a list from before profiles counts as set up');
+  const phone = {todos: [{id: 'a', title: 'להחזיר ספר', done: true, doneOn: '2026-10-27'}]};
+  const laptop = {todos: [{id: 'a', title: 'להחזיר ספר'}, {id: 'n', title: 'חדש'}]};
+  assert.deepEqual(mergeStates(laptop, phone).todos, [{id: 'a', title: 'להחזיר ספר', done: true, doneOn: '2026-10-27'}, {id: 'n', title: 'חדש', done: false}]);
+  assert.equal(mergeStates(phone, laptop).todos[0].done, true);
+});
