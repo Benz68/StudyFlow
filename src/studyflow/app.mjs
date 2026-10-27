@@ -614,6 +614,13 @@ document.addEventListener('click', event => {
     'commit': commitTell,
     'pick-day': () => { ui.day = t.dataset.date === localDate() ? '' : t.dataset.date; render(); },
     'toggle-done': () => toggleDone(id),
+    'todo-toggle': () => mutate(() => {
+      const item = state.todos.find(x => x.id === id), today = localDate();
+      Object.assign(item, item.done ? {done: false, doneOn: undefined} : {done: true, doneOn: today});
+      // What was ticked on an earlier day has left the page; it leaves the list too.
+      state.todos = state.todos.filter(x => !x.done || x.doneOn === today);
+    }),
+    'todo-remove': () => mutate(() => { state.todos = state.todos.filter(x => x.id !== id); }, 'נמחק מהרשימה.'),
     'delete-item': () => mutate(() => { state.items = state.items.filter(i => i.id !== id); for (const g of state.goals) g.log = g.log.filter(l => l.itemId !== id); }, 'נמחק.'),
     'move-item': () => { const item = state.items.find(i => i.id === id); if (!item) return; ui.pending = {move: item.id, options: moveOptions(item)}; open(moveForm(item, ui.pending.options)); },
     'move-to': () => {
@@ -797,6 +804,13 @@ document.addEventListener('submit', event => {
   event.preventDefault();
   const fd = new FormData(form), get = k => String(fd.get(k) ?? '').trim();
   try {
+    if (kind === 'todo') {
+      const title = get('title'); if (!title) return;
+      mutate(() => { const today = localDate(); state.todos = [...state.todos.filter(x => !x.done || x.doneOn === today), {id: uid(), title, done: false}]; });
+      // The line stays open for the next thing, like writing down a list.
+      main.querySelector('#todo-new')?.focus();
+      return;
+    }
     if (kind === 'semester') {
       const classes = updateSemester(state.classes, get('from'), get('until'));
       close(); ui.week = weekStart(get('from'));

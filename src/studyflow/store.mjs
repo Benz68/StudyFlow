@@ -20,7 +20,7 @@ const unique = items => { const seen = new Set(); return items.filter(x => !seen
 export const defaultPrefs = Object.freeze({dayStart: '08:00', dayEnd: '22:00', breakMinutes: 10});
 
 export function createState() {
-  return {version: VERSION, classes: [], items: [], courses: [], goals: [], jobs: [], shifts: [], prefs: {...defaultPrefs},
+  return {version: VERSION, classes: [], items: [], courses: [], goals: [], jobs: [], shifts: [], todos: [], prefs: {...defaultPrefs},
     profile: {name: '', areas: [], onboarded: false, tips: [], terms: '', moneyGoal: 0, moneyFor: '', activeDays: []}};
 }
 
@@ -74,11 +74,14 @@ export function validateState(value) {
     id: text(s.id), jobId: s.jobId, date: s.date, start: s.start, end: s.end,
     breakMinutes: Math.round(number(s.breakMinutes, 0, 0, 240)), tips: Math.round(number(s.tips, 0, 0, 100000)),
     ...(text(s.note, 200) ? {note: text(s.note, 200)} : {})})));
+  // Things to remember, with no time: they stay on the list until ticked, and a tick keeps the day it was made.
+  state.todos = unique(list(value.todos, 300).filter(t => t && text(t.id) && text(t.title, 160)).map(t => ({
+    id: text(t.id), title: text(t.title, 160), done: t.done === true, ...(t.done === true && validDate(t.doneOn) ? {doneOn: t.doneOn} : {})})));
   state.prefs = prefs(value.prefs);
   // Who this is and what they set up first. A planner saved before profiles existed already has its things,
   // so it counts as set up and skips the first-time questions.
   const p = value.profile && typeof value.profile === 'object' ? value.profile : null;
-  const hadThings = ['classes', 'items', 'courses', 'goals', 'jobs', 'shifts'].some(k => Array.isArray(value[k]) && value[k].length);
+  const hadThings = ['classes', 'items', 'courses', 'goals', 'jobs', 'shifts', 'todos'].some(k => Array.isArray(value[k]) && value[k].length);
   state.profile = {name: text(p?.name, 40), areas: [...new Set(list(p?.areas, 3).filter(a => ['studies', 'work', 'goals'].includes(a)))],
     onboarded: p ? p.onboarded === true : hadThings, tips: [...new Set(list(p?.tips, 20).filter(t => typeof t === 'string' && t.length <= 20))],
     terms: validDate(p?.terms) ? p.terms : '',
@@ -97,7 +100,9 @@ export function mergeStates(mine, theirs) {
   const join = (x = [], y = []) => { const ids = new Set(x.map(i => i.id)); return [...x, ...y.filter(i => !ids.has(i.id))]; };
   const same = (list, id) => list.find(i => i.id === id);
   const out = {...a};
-  for (const k of ['classes', 'items', 'courses', 'goals', 'jobs', 'shifts']) out[k] = join(a[k], b[k]);
+  for (const k of ['classes', 'items', 'courses', 'goals', 'jobs', 'shifts', 'todos']) out[k] = join(a[k], b[k]);
+  // Ticked on either device stays ticked.
+  out.todos = out.todos.map(t => { const o = same(b.todos, t.id); return o?.done && !t.done ? {...t, done: true, doneOn: o.doneOn} : t; });
   out.goals = out.goals.map(g => { const t = same(b.goals, g.id); return t ? {...g, log: join(g.log, t.log)} : g; });
   out.classes = out.classes.map(c => { const t = same(b.classes, c.id); return t ? {...c, skipDates: [...new Set([...c.skipDates, ...t.skipDates])]} : c; });
   out.courses = out.courses.map(c => { const t = same(b.courses, c.id); return t ? {...c, topics: join(c.topics, t.topics), deadlines: join(c.deadlines, t.deadlines)} : c; });
@@ -181,6 +186,7 @@ export function demoState(now = new Date()) {
       {id: guitar, title: 'גיטרה', type: 'hobby', unit: 'times', noun: 'תרגולים', target: 3, period: 'week', sessionMinutes: 30, log: []},
     ],
     items: [{id: uid(), title: 'ארוחת ערב עם המשפחה', date: today, start: '19:30', end: '21:00', kind: 'event', fixed: true}],
+    todos: [{id: uid(), title: 'לקנות מחברת חדשה', done: true, doneOn: today}, {id: uid(), title: 'להחזיר ספר לספרייה'}, {id: uid(), title: '100 שכיבות שמיכה'}],
     jobs: [{id: cafe, name: 'קפה רחביה', wage: 38}],
     // Evening shifts, after every class in the sample timetable, and never on the sample dinner.
     shifts: [at(-6), at(-4), at(-1), at(2), at(5)].map((date, i) => ({id: uid(), jobId: cafe, date, start: '17:00', end: i === 3 ? '23:30' : '22:00', tips: i % 2 ? 120 : 60})),

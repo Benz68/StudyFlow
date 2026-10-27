@@ -53,6 +53,7 @@ export function today(state, ui, now = new Date()) {
   ${ui.demo ? `<div class="demo-banner">זו דוגמה. שום דבר לא נשמר.<button data-action="exit-demo">חזרה אליי ${icon('arrow')}</button></div>` : ''}
   ${heading('היום', `${greeting(now.getHours())}${state.profile?.name ? `, ${esc(state.profile.name)}` : ''} · יום ${DAY_NAMES[now.getDay()]}, ${dateLabel(date)}`)}
   ${ui.proposals ? reviewCard(ui.proposals, date, state) : tellBox(ui)}
+  ${todoNote(state, date)}
   ${fresh ? welcome() : `${boost(state, date, now)}${alerts(state, date)}${dayStrip(state, ui.day || date, date)}${dayTimeline(state, ui.day || date, now, ui)}${progressStrip(state, date)}`}`;
 }
 
@@ -100,6 +101,29 @@ function boost(state, date, now) {
     </article>`);
   }
   return `<section class="boost">${section('ההישגים שלי')}<div class="boost-grid">${notes.join('')}</div></section>`;
+}
+
+// Things to remember, with no time: a ruled notebook page. A tick crosses the line out in red pen;
+// what was ticked stays crossed out until the day ends, and what was not stays until it is.
+export const shownTodos = (todos, date) => todos.filter(t => !t.done || t.doneOn === date);
+function todoNote(state, date) {
+  const rows = shownTodos(state.todos, date);
+  const left = rows.filter(t => !t.done).length;
+  return `<section class="todo" aria-labelledby="todo-title">
+    <div class="big-card note todo-note">
+      <span class="tape" aria-hidden="true"></span>
+      <div class="todo-head"><h3 id="todo-title">צריך לעשות</h3>${rows.length ? `<small>${left ? `${left} ${left === 1 ? 'נשאר' : 'נשארו'}` : 'הכול סגור!'}</small>` : ''}</div>
+      ${rows.length ? `<ul class="todo-lines">${rows.map(t => `<li class="${t.done ? 'is-done' : ''}">
+        <button class="todo-box" data-action="todo-toggle" data-id="${esc(t.id)}" aria-pressed="${t.done}" aria-label="${t.done ? 'להחזיר' : 'סימון'}: ${esc(t.title)}">${t.done ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path pathLength="1" d="M4 13l5 5L20 5"/></svg>' : ''}</button>
+        <span class="todo-text"><span>${esc(t.title)}</span></span>
+        <button class="todo-remove" data-action="todo-remove" data-id="${esc(t.id)}" aria-label="למחוק: ${esc(t.title)}">${icon('close')}</button>
+      </li>`).join('')}</ul>` : ''}
+      <form data-form="todo" class="todo-add">
+        <label for="todo-new" class="visually-hidden">משהו לזכור</label>
+        <input id="todo-new" name="title" maxlength="160" autocomplete="off" enterkeyhint="done" placeholder="${rows.length ? '+ עוד משהו...' : '+ משהו לזכור, בלי שעה. למשל: להחזיר ספר לספרייה'}">
+      </form>
+    </div>
+  </section>`;
 }
 
 function dayStrip(state, selected, todayDate) {
