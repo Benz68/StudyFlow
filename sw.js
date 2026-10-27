@@ -1,4 +1,4 @@
-const CACHE = 'studyflow-v32';
+const CACHE = 'studyflow-v33';
 // Fonts change rarely and are kept separately, so the handwritten headings also show offline.
 const FONTS = 'studyflow-fonts-v1';
 // Paths are relative to where the app is hosted (/ locally, /StudyFlow/ on GitHub Pages).
